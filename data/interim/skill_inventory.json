@@ -1,0 +1,122 @@
+[
+  {
+    "category": "literature_search",
+    "name": "nature-academic-search",
+    "location": "C:/Users/Administrator/.codex/skills/nature-academic-search",
+    "input": "Topic, Boolean query, DOI/PMID/arXiv IDs, optional source choices.",
+    "output": "Structured paper metadata, DOI/PMID/arXiv IDs, citations, deduplicated search results.",
+    "reusable": "yes",
+    "ecfinder_call": "Wrap source routing and dedup rules in src/ecfinder/search; prefer T1 CrossRef/PubMed/OpenAlex fallback.",
+    "risks_or_limits": "MCP search tools are not exposed in this session; standalone fallback should use public APIs and record failures."
+  },
+  {
+    "category": "metadata_lookup",
+    "name": "nature-academic-search format-converter and DOI tools",
+    "location": "C:/Users/Administrator/.codex/skills/nature-academic-search/scripts",
+    "input": "DOI, PMID, arXiv ID, or title.",
+    "output": "RIS/BibTeX/NBIB-style metadata or formatted citation.",
+    "reusable": "partial",
+    "ecfinder_call": "Use DOI as primary key; fallback to normalized title plus first author.",
+    "risks_or_limits": "Scripts are external to this repo; use wrappers rather than modifying skill code."
+  },
+  {
+    "category": "pdf_download",
+    "name": "nature-reader DOI/arXiv source handling",
+    "location": "C:/Users/Administrator/.codex/skills/nature-reader",
+    "input": "DOI, arXiv URL, publisher landing page, or known PDF URL.",
+    "output": "Resolved lawful PDF/HTML source and source map.",
+    "reusable": "partial",
+    "ecfinder_call": "Use as retrieval design reference; ECfinder downloader stores only local raw files and source hashes.",
+    "risks_or_limits": "Do not bypass paywalls; copyright PDFs must remain ignored by Git."
+  },
+  {
+    "category": "html_fulltext_fallback",
+    "name": "nature-reader html fragment",
+    "location": "C:/Users/Administrator/.codex/skills/nature-reader/static/fragments/source",
+    "input": "Publisher/preprint HTML page.",
+    "output": "Section-aware extracted text with source anchors.",
+    "reusable": "partial",
+    "ecfinder_call": "Implement src/ecfinder/parse/html_parser.py with section and anchor preservation.",
+    "risks_or_limits": "Publisher HTML varies; JavaScript-heavy pages may need browser automation later."
+  },
+  {
+    "category": "pdf_parse",
+    "name": "pdf skill plus bundled pdfplumber/pypdf",
+    "location": "C:/Users/Administrator/.codex/plugins/cache/openai-primary-runtime/pdf",
+    "input": "Local PDF file path.",
+    "output": "Page text, page count, rendered-page QA assets when needed.",
+    "reusable": "yes",
+    "ecfinder_call": "Use pdfplumber first, pypdf as fallback; store page numbers and source hashes.",
+    "risks_or_limits": "Scanned PDFs need OCR; bundled runtime exposes pdfinfo/pdftoppm but no OCR was confirmed."
+  },
+  {
+    "category": "table_extraction",
+    "name": "pdfplumber and pandas",
+    "location": "C:/Users/Administrator/.cache/codex-runtimes/codex-primary-runtime/dependencies/python",
+    "input": "PDF pages or HTML tables.",
+    "output": "Row-oriented table records with page/table labels.",
+    "reusable": "yes",
+    "ecfinder_call": "Use src/ecfinder/parse/table_parser.py; preserve table_id and page.",
+    "risks_or_limits": "Complex scientific tables may require manual review or model-assisted cleanup."
+  },
+  {
+    "category": "llm_screening",
+    "name": "prompt wrapper",
+    "location": "prompts/screen_title_abstract.md",
+    "input": "Title, abstract, metadata.",
+    "output": "include/exclude decision, reason, confidence.",
+    "reusable": "new_wrapper",
+    "ecfinder_call": "Implement deterministic prompt contract and JSONL output in download.semantic_screen.",
+    "risks_or_limits": "Requires an LLM runtime/API not configured in this repo; dry-run rules remain available."
+  },
+  {
+    "category": "llm_extraction",
+    "name": "prompt wrapper",
+    "location": "prompts/extract_transformation_records.md",
+    "input": "Weighted chunk with section/page/table/figure context.",
+    "output": "Raw PFAS transformation records in JSONL.",
+    "reusable": "new_wrapper",
+    "ecfinder_call": "Implement schema-first JSON parsing and provenance checks in extract.llm_extractor.",
+    "risks_or_limits": "LLM may hallucinate; ReviewAgent must reject unsupported fields."
+  },
+  {
+    "category": "record_review",
+    "name": "rule checks plus review prompt",
+    "location": "configs/review_rules.yaml; prompts/review_transformation_records.md",
+    "input": "Raw extracted record plus source chunk.",
+    "output": "Accepted/rejected record with reasons and re-extraction requests.",
+    "reusable": "new_wrapper",
+    "ecfinder_call": "Use review.rule_checks before optional LLM review.",
+    "risks_or_limits": "Acceptance depends on evidence quote and natural-environment condition clarity."
+  },
+  {
+    "category": "chemical_name_standardization",
+    "name": "local normalizer; optional external chemistry packages",
+    "location": "src/ecfinder/extract/record_normalizer.py",
+    "input": "Parent/product names, abbreviations, formulas, CAS if present.",
+    "output": "Canonical display names, aliases, confidence flags.",
+    "reusable": "new_wrapper",
+    "ecfinder_call": "Normalize common PFAS abbreviations locally; leave external IDs nullable.",
+    "risks_or_limits": "RDKit and ChEMBL clients were not installed in bundled Python; avoid hard dependency."
+  },
+  {
+    "category": "github_commit",
+    "name": "git CLI and GitHub connector",
+    "location": "git on PATH; mcp__codex_apps__github connector",
+    "input": "Local changes, branch, repository name.",
+    "output": "Commits, branches, pushes when remote exists.",
+    "reusable": "partial",
+    "ecfinder_call": "Use local git for branch/commit; use manual GitHub creation because gh/create-repo is unavailable.",
+    "risks_or_limits": "GitHub CLI is not installed and connector cannot create a new repo in this session."
+  },
+  {
+    "category": "prior_ecmonitor_ecoscan_pfas_modules",
+    "name": "Documents/EC_MONITOR and Codex archives",
+    "location": "C:/Users/Administrator/Documents",
+    "input": "Existing project directories and archived task text.",
+    "output": "Reusable module candidates or negative finding.",
+    "reusable": "no_direct_module_found",
+    "ecfinder_call": "Do not copy archived text; record that EC_MONITOR currently contains only .git metadata.",
+    "risks_or_limits": "Search found PFAS-related archived prompts and spectra files, but no reusable ECMonitor/EcoScan code module in workspace."
+  }
+]

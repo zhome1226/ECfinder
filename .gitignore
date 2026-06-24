@@ -1,0 +1,15 @@
+data/raw/pdfs/*
+!data/raw/pdfs/.gitkeep
+data/raw/html/*
+!data/raw/html/.gitkeep
+*.pdf
+*.tmp
+.env
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+*.egg-info/
