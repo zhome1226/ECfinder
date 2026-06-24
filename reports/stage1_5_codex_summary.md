@@ -42,3 +42,13 @@ Regex fallback produced 13 `needs_reextract` rows and 0 validated rows. Codex se
 ## Stage 2 Recommendation
 
 Proceed to Stage 2 expansion only after adding more primary full text sources. The current pipeline can now validate high-confidence records, but coverage is still dominated by one original 8:2 FTOH biodegradation paper.
+
+## Pilot Gold Set Metrics
+
+| Metric | Count |
+|---|---:|
+| gold_record_count | 8 |
+| extracted_match_count | 8 |
+| review_validated_match_count | 8 |
+| false_positive_count | 0 |
+| missed_gold_count | 0 |
