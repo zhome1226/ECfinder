@@ -13,7 +13,7 @@
 - csv_row_count_ok: true
 - validation_ok: true
 - stage2_ready_or_not: ready_for_targeted_stage2_search
-- zero_validated_reason:
+- zero_validated_reason: none
 
 ## Errors
 

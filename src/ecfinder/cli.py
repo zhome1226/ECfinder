@@ -518,7 +518,7 @@ def main(argv: list[str] | None = None) -> int:
             f"- csv_row_count_ok: {str(result['csv_row_count_ok']).lower()}",
             f"- validation_ok: {str(result['validation_ok']).lower()}",
             f"- stage2_ready_or_not: {result['stage2_ready_or_not']}",
-            f"- zero_validated_reason: {result['zero_validated_reason']}",
+            f"- zero_validated_reason: {result['zero_validated_reason'] or 'none'}",
             "",
             "## Errors",
             "",
