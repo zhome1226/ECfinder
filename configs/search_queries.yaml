@@ -76,6 +76,9 @@ queries:
   - id: wastewater_environmental
     boolean: '(PFAS OR "per- and polyfluoroalkyl substances") AND (wastewater OR effluent OR sludge OR biosolids) AND (transformation OR degradation OR precursor)'
     priority: medium
+  - id: open_access_biodegradation_followup
+    boolean: 'Biodegradation Property of 8:2 Fluorotelomer Alcohol under Aerobic Anoxic Anaerobic Conditions'
+    priority: high
 
 screening:
   include_if:

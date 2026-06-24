@@ -98,11 +98,11 @@ def write_stage1_summary(root: Path) -> None:
             "## Pilot Status",
             "",
             f"- Screening decisions: `{json.dumps(decisions, sort_keys=True)}`",
-            f"- Download dry-run candidates: `{json.dumps(download_status, sort_keys=True)}`",
-            f"- Raw files present outside `.gitkeep`: {len(raw_files)}",
-            "- No copyrighted PDF or publisher HTML is committed.",
+            f"- Download/acquisition status: `{json.dumps(download_status, sort_keys=True)}`",
+            f"- Ignored raw files present outside `.gitkeep`: {len(raw_files)}",
+            "- No copyrighted PDF, publisher HTML, or full parsed text is committed.",
             "- LLM extraction is scaffolded but not executed because no LLM runtime is configured in this repository.",
-            "- Full-text parsing and chunking remain empty until lawful full text is acquired.",
+            "- Parsed section and chunk files committed here are indexes with hashes, not full text.",
             "",
         ]
     )
@@ -111,11 +111,20 @@ def write_stage1_summary(root: Path) -> None:
 
 def write_failure_analysis(root: Path) -> None:
     rejected = root / "data" / "reviewed" / "rejected_records.jsonl"
-    count = sum(1 for line in rejected.read_text(encoding="utf-8").splitlines() if line.strip()) if rejected.exists() else 0
+    records = [json.loads(line) for line in rejected.read_text(encoding="utf-8").splitlines() if line.strip()] if rejected.exists() else []
+    status_counts: dict[str, int] = {}
+    reason_counts: dict[str, int] = {}
+    for record in records:
+        status = record.get("reviewer_status", "unknown")
+        status_counts[status] = status_counts.get(status, 0) + 1
+        for reason in record.get("review_reasons", []):
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
     (root / "reports" / "failure_analysis.md").write_text(
         "# Failure Analysis\n\n"
-        f"Rejected or re-extraction records: {count}\n\n"
-        "Common reasons will be summarized after ReviewAgent has non-empty input.\n",
+        f"Rejected or re-extraction records: {len(records)}\n\n"
+        f"Reviewer status counts: `{json.dumps(status_counts, sort_keys=True)}`\n\n"
+        f"Reason counts: `{json.dumps(reason_counts, sort_keys=True)}`\n\n"
+        "Current pilot uses a conservative regex fallback extractor. All non-empty raw candidates should be treated as re-extraction tasks unless a later LLM or manual review confirms the parent-product relationship against the source chunk.\n",
         encoding="utf-8",
     )
 

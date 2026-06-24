@@ -2,20 +2,20 @@
 
 | Artifact | Records |
 |---|---:|
-| `data/interim/search_results.jsonl` | 12 |
-| `data/interim/screened_sources.jsonl` | 12 |
-| `data/interim/download_status.jsonl` | 8 |
-| `data/interim/parsed_sections.jsonl` | 0 |
-| `data/interim/chunks.jsonl` | 0 |
-| `data/extracted/pfas_transformation_records_raw.jsonl` | 0 |
+| `data/interim/search_results.jsonl` | 17 |
+| `data/interim/screened_sources.jsonl` | 17 |
+| `data/interim/download_status.jsonl` | 11 |
+| `data/interim/parsed_sections.jsonl` | 58 |
+| `data/interim/chunks.jsonl` | 94 |
+| `data/extracted/pfas_transformation_records_raw.jsonl` | 13 |
 | `data/reviewed/pfas_transformation_records_validated.jsonl` | 0 |
-| `data/reviewed/rejected_records.jsonl` | 0 |
+| `data/reviewed/rejected_records.jsonl` | 13 |
 
 ## Pilot Status
 
-- Screening decisions: `{"exclude": 4, "include": 8}`
-- Download dry-run candidates: `{"dry_run:landing": 5, "dry_run:pdf": 3}`
-- Raw files present outside `.gitkeep`: 0
-- No copyrighted PDF or publisher HTML is committed.
+- Screening decisions: `{"exclude": 6, "include": 10, "maybe": 1}`
+- Download/acquisition status: `{"downloaded:pdf": 3, "failed:pdf": 2, "not_attempted:html": 1, "not_attempted:landing": 5}`
+- Ignored raw files present outside `.gitkeep`: 5
+- No copyrighted PDF, publisher HTML, or full parsed text is committed.
 - LLM extraction is scaffolded but not executed because no LLM runtime is configured in this repository.
-- Full-text parsing and chunking remain empty until lawful full text is acquired.
+- Parsed section and chunk files committed here are indexes with hashes, not full text.

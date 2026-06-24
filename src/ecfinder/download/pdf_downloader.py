@@ -15,6 +15,8 @@ def download_url(url: str, destination: Path, timeout: int = 45) -> dict:
     with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec - URL comes from metadata
         content_type = response.headers.get("content-type", "")
         data = response.read()
+    if "pdf" not in content_type.lower() and not data.startswith(b"%PDF"):
+        raise ValueError(f"downloaded content is not a PDF: content_type={content_type}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(data)
     return {"content_type": content_type, "bytes": len(data), "sha256": sha256_file(destination)}

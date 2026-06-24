@@ -32,6 +32,11 @@ DEFAULT_QUERIES = [
         '("perfluoroalkyl" OR PFAS) AND ("natural attenuation" OR "environmental conditions" OR field OR microcosm) AND (biodegradation OR transformation)',
         "medium",
     ),
+    QuerySpec(
+        "open_access_biodegradation_followup",
+        "Biodegradation Property of 8:2 Fluorotelomer Alcohol under Aerobic Anoxic Anaerobic Conditions",
+        "high",
+    ),
 ]
 
 
