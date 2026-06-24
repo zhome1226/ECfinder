@@ -301,6 +301,16 @@ def _write_review_quality_audit_stage1_6(
         "",
         "Activated sludge, wastewater treatment, WWTP bioreactors, and engineered biological treatment records are excluded from the natural-environment main database.",
         "",
+        "The eight previously validated activated-sludge records were reclassified as auxiliary_engineered_biological_evidence because activated sludge is an engineered wastewater-treatment matrix, not natural environmental transformation evidence.",
+        "",
+        "## Synchronized Counts",
+        "",
+        f"- natural_environment_validated_count = {len(validated)}",
+        f"- auxiliary_engineered_biological_count = {len(auxiliary)}",
+        f"- manual_review_count = {len(manual)}",
+        f"- rejected_count = {len(rejected)}",
+        f"- reextraction_attempt_count = {len(reextract)}",
+        "",
         "| Artifact | Count |",
         "|---|---:|",
         f"| codex raw records reviewed | {len(codex_raw)} |",
@@ -350,12 +360,18 @@ def _walk_values(value):
 
 
 def _load_output_validation(root: Path) -> dict:
-    path = root / "reports" / "output_validation.md"
+    path = root / "reports" / "stage1_7_output_validation.md"
+    if not path.exists():
+        path = root / "reports" / "output_validation.md"
     if not path.exists():
         return {}
     text = path.read_text(encoding="utf-8")
     return {
-        "ok": "true" if "- ok: True" in text else "false" if "- ok: False" in text else "unknown",
+        "ok": "true"
+        if "- validation_ok: true" in text or "- ok: True" in text
+        else "false"
+        if "- validation_ok: false" in text or "- ok: False" in text
+        else "unknown",
         "zero_validated_reason": "No records met natural-environment criteria."
         if "No records met natural-environment criteria." in text
         else "",
@@ -487,11 +503,21 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "validate-outputs":
         result = validate_outputs(root)
         report = [
-            "# Output Validation",
+            "# Stage 1.7 Output Validation",
             "",
-            f"- ok: {result['ok']}",
-            f"- validated_count: {result['validated_count']}",
-            f"- auxiliary_count: {result['auxiliary_count']}",
+            f"- validated_jsonl_count: {result['validated_jsonl_count']}",
+            f"- validated_csv_data_row_count: {result['validated_csv_data_row_count']}",
+            f"- auxiliary_jsonl_count: {result['auxiliary_jsonl_count']}",
+            f"- auxiliary_csv_data_row_count: {result['auxiliary_csv_data_row_count']}",
+            f"- manual_review_count: {result['manual_review_count']}",
+            f"- rejected_count: {result['rejected_count']}",
+            f"- reextraction_attempt_count: {result['reextraction_attempt_count']}",
+            f"- validated_contains_activated_sludge: {str(result['validated_contains_activated_sludge']).lower()}",
+            f"- validated_contains_wastewater_treatment: {str(result['validated_contains_wastewater_treatment']).lower()}",
+            f"- jsonl_parse_ok: {str(result['jsonl_parse_ok']).lower()}",
+            f"- csv_row_count_ok: {str(result['csv_row_count_ok']).lower()}",
+            f"- validation_ok: {str(result['validation_ok']).lower()}",
+            f"- stage2_ready_or_not: {result['stage2_ready_or_not']}",
             f"- zero_validated_reason: {result['zero_validated_reason']}",
             "",
             "## Errors",
@@ -499,6 +525,7 @@ def main(argv: list[str] | None = None) -> int:
             *(f"- {error}" for error in result["errors"]),
             "",
         ]
+        (root / "reports" / "stage1_7_output_validation.md").write_text("\n".join(report), encoding="utf-8")
         (root / "reports" / "output_validation.md").write_text("\n".join(report), encoding="utf-8")
         if not result["ok"]:
             return 1

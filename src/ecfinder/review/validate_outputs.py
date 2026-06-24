@@ -3,10 +3,19 @@
 from __future__ import annotations
 
 import csv
+import json
 from pathlib import Path
 
 from ecfinder.review.export_validated import ENGINEERED_TERMS, NATURAL_ALLOWED_SETTING_TYPES
-from ecfinder.utils.logging import read_jsonl
+
+
+REVIEWED_JSONL_FILES = (
+    "data/reviewed/pfas_transformation_records_validated.jsonl",
+    "data/reviewed/auxiliary_engineered_biological_records.jsonl",
+    "data/reviewed/manual_review_records.jsonl",
+    "data/reviewed/rejected_records.jsonl",
+    "data/reviewed/reextraction_attempts.jsonl",
+)
 
 
 def validate_outputs(root: str | Path) -> dict:
@@ -16,9 +25,29 @@ def validate_outputs(root: str | Path) -> dict:
     auxiliary_path = repo_root / "data" / "reviewed" / "auxiliary_engineered_biological_records.jsonl"
     auxiliary_csv = repo_root / "data" / "reviewed" / "auxiliary_engineered_biological_records.csv"
 
-    validated = list(read_jsonl(validated_path))
-    auxiliary = list(read_jsonl(auxiliary_path))
+    jsonl_records: dict[str, list[dict]] = {}
+    parse_errors: list[str] = []
+    for rel in REVIEWED_JSONL_FILES:
+        records, file_errors = _read_jsonl_checked(repo_root / rel)
+        jsonl_records[rel] = records
+        parse_errors.extend(file_errors)
+
+    validated = jsonl_records["data/reviewed/pfas_transformation_records_validated.jsonl"]
+    auxiliary = jsonl_records["data/reviewed/auxiliary_engineered_biological_records.jsonl"]
+    manual = jsonl_records["data/reviewed/manual_review_records.jsonl"]
+    rejected = jsonl_records["data/reviewed/rejected_records.jsonl"]
+    reextract = jsonl_records["data/reviewed/reextraction_attempts.jsonl"]
+    validated_csv_count = _csv_count(validated_csv)
+    auxiliary_csv_count = _csv_count(auxiliary_csv)
     errors: list[str] = []
+    errors.extend(parse_errors)
+    validated_text = "\n".join(_joined_record_text(record) for record in validated)
+    validated_contains_activated_sludge = "activated sludge" in validated_text or "activated-sludge" in validated_text
+    validated_contains_wastewater_treatment = (
+        "wastewater treatment" in validated_text
+        or "wastewater-treatment" in validated_text
+        or "wwtp" in validated_text
+    )
 
     for index, record in enumerate(validated, start=1):
         text = _joined_record_text(record)
@@ -37,21 +66,76 @@ def validate_outputs(root: str | Path) -> dict:
         elif (record.get("conditions") or {}).get("setting_type") not in NATURAL_ALLOWED_SETTING_TYPES:
             errors.append(f"validated row {index} has non-natural setting_type")
 
-    if _csv_count(validated_csv) != len(validated):
+    for index, record in enumerate(auxiliary, start=1):
+        review = record.get("review") or {}
+        if review.get("review_status") != "auxiliary_engineered_biological_evidence":
+            errors.append(f"auxiliary row {index} has invalid review.review_status")
+        for field in ["reason_not_in_main_database", "potential_use", "source_id", "chunk_id", "evidence_quote"]:
+            if not record.get(field):
+                errors.append(f"auxiliary row {index} missing {field}")
+        if not (record.get("parent_compound") or {}).get("name"):
+            errors.append(f"auxiliary row {index} missing parent_compound.name")
+        if not (record.get("product_compound") or {}).get("name"):
+            errors.append(f"auxiliary row {index} missing product_compound.name")
+
+    if validated_csv_count != len(validated):
         errors.append("validated CSV row count does not match JSONL")
-    if _csv_count(auxiliary_csv) != len(auxiliary):
+    if auxiliary_csv_count != len(auxiliary):
         errors.append("auxiliary CSV row count does not match JSONL")
 
     if not any(any(term in _joined_record_text(record) for term in ENGINEERED_TERMS) for record in auxiliary) and auxiliary:
         errors.append("auxiliary file has records but none contain engineered biological context")
+    if validated_contains_activated_sludge:
+        errors.append("validated JSONL contains activated sludge")
+    if validated_contains_wastewater_treatment:
+        errors.append("validated JSONL contains wastewater treatment or WWTP")
+
+    csv_row_count_ok = validated_csv_count == len(validated) and auxiliary_csv_count == len(auxiliary)
+    jsonl_parse_ok = not parse_errors
 
     return {
         "validated_count": len(validated),
+        "validated_jsonl_count": len(validated),
+        "validated_csv_data_row_count": validated_csv_count,
         "auxiliary_count": len(auxiliary),
+        "auxiliary_jsonl_count": len(auxiliary),
+        "auxiliary_csv_data_row_count": auxiliary_csv_count,
+        "manual_review_count": len(manual),
+        "rejected_count": len(rejected),
+        "reextraction_attempt_count": len(reextract),
+        "validated_contains_activated_sludge": validated_contains_activated_sludge,
+        "validated_contains_wastewater_treatment": validated_contains_wastewater_treatment,
+        "jsonl_parse_ok": jsonl_parse_ok,
+        "csv_row_count_ok": csv_row_count_ok,
         "errors": errors,
         "ok": not errors,
+        "validation_ok": not errors,
         "zero_validated_reason": "No records met natural-environment criteria." if not validated else "",
+        "stage2_ready_or_not": "ready_for_targeted_stage2_search" if not errors else "not_ready_fix_outputs_first",
     }
+
+
+def _read_jsonl_checked(path: Path) -> tuple[list[dict], list[str]]:
+    records: list[dict] = []
+    errors: list[str] = []
+    if not path.exists():
+        errors.append(f"missing JSONL file: {path}")
+        return records, errors
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                value = json.loads(stripped)
+            except json.JSONDecodeError as exc:
+                errors.append(f"{path}:{line_number} invalid JSONL: {exc.msg}")
+                continue
+            if not isinstance(value, dict):
+                errors.append(f"{path}:{line_number} JSONL line is not an object")
+                continue
+            records.append(value)
+    return records, errors
 
 
 def _joined_record_text(record: dict) -> str:

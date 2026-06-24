@@ -4,6 +4,16 @@
 
 Activated sludge, wastewater treatment, WWTP bioreactors, and engineered biological treatment records are excluded from the natural-environment main database.
 
+The eight previously validated activated-sludge records were reclassified as auxiliary_engineered_biological_evidence because activated sludge is an engineered wastewater-treatment matrix, not natural environmental transformation evidence.
+
+## Synchronized Counts
+
+- natural_environment_validated_count = 0
+- auxiliary_engineered_biological_count = 8
+- manual_review_count = 0
+- rejected_count = 16
+- reextraction_attempt_count = 26
+
 | Artifact | Count |
 |---|---:|
 | codex raw records reviewed | 11 |
