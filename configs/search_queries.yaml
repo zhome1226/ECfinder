@@ -1,0 +1,89 @@
+project: ECfinder
+stage: 1
+topic: PFAS transformation pathways and transformation products under natural environmental conditions
+
+source_policy:
+  primary_tiers:
+    - CrossRef
+    - PubMed
+    - OpenAlex
+  secondary_tiers:
+    - Semantic Scholar
+    - publisher_landing_pages
+  last_resort:
+    - Google Scholar manual check
+    - Scopus or Web of Science manual/institutional check
+  notes:
+    - Do not scrape unstable sources unless structured API sources are insufficient.
+    - Record source, query, timestamp, result count, and failure reason for every run.
+
+concepts:
+  pfas:
+    - PFAS
+    - per- and polyfluoroalkyl substances
+    - perfluoroalkyl substances
+    - fluorotelomer
+    - perfluorocarboxylic acid
+    - perfluorosulfonic acid
+    - PFOA
+    - PFOS
+    - PFHxA
+    - PFHxS
+    - 6:2 FTOH
+    - 8:2 FTOH
+    - FOSA
+    - N-EtFOSE
+    - N-MeFOSA
+  transformation:
+    - transformation
+    - degradation
+    - biotransformation
+    - biodegradation
+    - phototransformation
+    - photolysis
+    - oxidation
+    - precursor
+    - transformation product
+    - metabolite
+    - pathway
+  natural_environment:
+    - soil
+    - sediment
+    - groundwater
+    - surface water
+    - river
+    - lake
+    - seawater
+    - wetland
+    - landfill leachate
+    - wastewater effluent
+    - natural attenuation
+    - environmental conditions
+
+queries:
+  - id: core_pathway
+    boolean: '("PFAS" OR "per- and polyfluoroalkyl substances" OR fluorotelomer) AND (transformation OR degradation OR biotransformation OR "transformation product") AND (environment* OR soil OR sediment OR water OR groundwater)'
+    priority: high
+  - id: precursor_products
+    boolean: '("PFAS precursor" OR fluorotelomer OR FOSA OR FOSE) AND ("transformation product" OR metabolite OR pathway) AND (soil OR sediment OR wastewater OR groundwater OR "surface water")'
+    priority: high
+  - id: natural_attenuation
+    boolean: '("perfluoroalkyl" OR PFAS) AND ("natural attenuation" OR "environmental conditions" OR field OR microcosm) AND (biodegradation OR transformation)'
+    priority: medium
+  - id: phototransformation
+    boolean: '(PFAS OR fluorotelomer OR perfluoroalkyl) AND (photolysis OR phototransformation OR sunlight) AND (water OR surface OR environmental)'
+    priority: medium
+  - id: wastewater_environmental
+    boolean: '(PFAS OR "per- and polyfluoroalkyl substances") AND (wastewater OR effluent OR sludge OR biosolids) AND (transformation OR degradation OR precursor)'
+    priority: medium
+
+screening:
+  include_if:
+    - PFAS parent, precursor, or product is explicitly discussed.
+    - Transformation, degradation, biotransformation, oxidation, photolysis, or precursor-to-product pathway is reported.
+    - Conditions are natural environment, field, environmental matrix, wastewater/landfill context, or environmentally realistic microcosm.
+  exclude_if:
+    - Only analytical method development without transformation evidence.
+    - Only toxicology/exposure without pathway or product evidence.
+    - Engineered treatment only, unless products are linked to environmental conditions or natural attenuation.
+    - Pure model prediction with no literature evidence.

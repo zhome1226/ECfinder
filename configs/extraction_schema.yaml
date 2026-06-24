@@ -1,0 +1,118 @@
+schema_name: pfas_transformation_record
+schema_version: 0.1.0
+record_level: evidence_quote
+
+required_fields:
+  - record_id
+  - source_id
+  - chunk_id
+  - parent_name
+  - product_name
+  - transformation_process
+  - natural_environment_context
+  - evidence_quote
+  - evidence_location
+
+fields:
+  record_id:
+    type: string
+    description: Stable ID generated from source_id, chunk_id, parent, product, and evidence hash.
+  source_id:
+    type: string
+    description: Stable source metadata ID.
+  chunk_id:
+    type: string
+    description: Stable chunk ID from parsed full text.
+  doi:
+    type: string_or_null
+  title:
+    type: string_or_null
+  publication_year:
+    type: integer_or_null
+  parent_name:
+    type: string
+  parent_aliases:
+    type: list_string
+  parent_cas:
+    type: string_or_null
+  parent_inchikey:
+    type: string_or_null
+  product_name:
+    type: string
+  product_aliases:
+    type: list_string
+  product_cas:
+    type: string_or_null
+  product_inchikey:
+    type: string_or_null
+  transformation_process:
+    type: enum
+    allowed:
+      - biotransformation
+      - biodegradation
+      - phototransformation
+      - hydrolysis
+      - oxidation
+      - reduction
+      - natural_attenuation
+      - unknown_environmental_transformation
+  pathway_description:
+    type: string_or_null
+  directionality:
+    type: enum
+    allowed:
+      - parent_to_product
+      - precursor_to_terminal_pfas
+      - multi_step
+      - ambiguous
+  natural_environment_context:
+    type: string
+  matrix:
+    type: string_or_null
+    examples:
+      - soil
+      - sediment
+      - groundwater
+      - surface water
+      - wastewater effluent
+      - landfill leachate
+      - biosolids
+  condition_type:
+    type: enum
+    allowed:
+      - field_observation
+      - environmental_microcosm
+      - natural_attenuation_study
+      - wastewater_or_leachate_environment
+      - unclear
+  evidence_quote:
+    type: string
+    constraints:
+      min_chars: 20
+      max_chars: 500
+  evidence_location:
+    type: object
+    required:
+      - section
+    properties:
+      page:
+        type: integer_or_null
+      section:
+        type: string
+      table_id:
+        type: string_or_null
+      figure_id:
+        type: string_or_null
+      caption:
+        type: string_or_null
+  confidence:
+    type: number
+    min: 0
+    max: 1
+  reviewer_status:
+    type: enum
+    allowed:
+      - unreviewed
+      - accepted
+      - rejected
+      - needs_reextract

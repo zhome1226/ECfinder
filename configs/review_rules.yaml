@@ -1,0 +1,41 @@
+review_policy:
+  acceptance_requires:
+    - source_id is present
+    - chunk_id is present
+    - parent_name is present
+    - product_name is present
+    - evidence_quote is present and directly supports the relationship
+    - evidence_location has section and at least one of page, table_id, figure_id, or caption when available
+    - natural_environment_context is explicit or strongly inferable from the source chunk
+  reject_if:
+    - evidence quote does not mention or support the parent/product/pathway relationship
+    - record is based only on model prediction or speculative pathway
+    - record is only engineered treatment with no environmental relevance
+    - product is a generic class rather than a named compound or clearly named product group
+    - parent/product is not PFAS, PFAS precursor, or PFAS transformation product
+    - source_id or chunk_id is missing
+  reextract_if:
+    - evidence quote is relevant but fields are incomplete
+    - table or figure likely contains the missing parent/product names
+    - process type is ambiguous but environmental transformation evidence is present
+
+confidence_thresholds:
+  accept_minimum: 0.70
+  needs_reextract_below: 0.70
+  reject_below: 0.40
+
+provenance:
+  required_trace_fields:
+    - source_id
+    - chunk_id
+    - evidence_quote
+    - evidence_location.section
+  preferred_trace_fields:
+    - evidence_location.page
+    - evidence_location.table_id
+    - evidence_location.figure_id
+    - evidence_location.caption
+
+copyright:
+  max_quote_chars: 500
+  note: Store short evidence snippets only; never commit full PDFs or publisher HTML.
