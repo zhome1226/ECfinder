@@ -1,4 +1,31 @@
 review_policy:
+  natural_environment_validated_allowed_setting_types:
+    - field_natural_environment
+    - natural_attenuation_field_site
+    - environmental_microcosm_from_field_sample
+    - soil_microcosm
+    - sediment_microcosm
+    - groundwater_microcosm
+    - surface_water_microcosm
+    - wetland_microcosm
+    - marine_or_estuarine_microcosm
+  main_database_excluded_setting_types:
+    - activated_sludge
+    - wastewater_treatment
+    - WWTP_bioreactor
+    - engineered_biological_treatment
+    - engineered_chemical_treatment
+    - AOP
+    - electrochemical
+    - plasma
+    - photocatalysis
+    - ozonation
+    - UV_persulfate
+    - hydrothermal
+    - incineration
+    - analytical_method_only
+    - review_only
+    - reference_list_only
   acceptance_requires:
     - source_id is present
     - chunk_id is present
@@ -6,11 +33,13 @@ review_policy:
     - product_name is present
     - evidence_quote is present and directly supports the relationship
     - evidence_location has section and at least one of page, table_id, figure_id, or caption when available
-    - natural_environment_context is explicit or strongly inferable from the source chunk
+    - setting_type is one of the natural_environment_validated_allowed_setting_types
+    - natural_environment_context is explicit and is not an engineered treatment matrix
   reject_if:
     - evidence quote does not mention or support the parent/product/pathway relationship
     - record is based only on model prediction or speculative pathway
     - record is only engineered treatment with no environmental relevance
+    - record is activated sludge, wastewater treatment, WWTP bioreactor, or engineered biological treatment
     - product is a generic class rather than a named compound or clearly named product group
     - parent/product is not PFAS, PFAS precursor, or PFAS transformation product
     - source_id or chunk_id is missing
@@ -23,6 +52,26 @@ confidence_thresholds:
   accept_minimum: 0.70
   needs_reextract_below: 0.70
   reject_below: 0.40
+
+review_statuses:
+  - validated_high_confidence
+  - validated_medium_confidence
+  - needs_manual_review
+  - needs_reextract
+  - auxiliary_engineered_biological_evidence
+  - rejected_engineered_treatment
+  - rejected_not_pfas
+  - rejected_no_transformation
+  - rejected_no_product
+  - rejected_no_natural_environment
+  - rejected_insufficient_evidence
+  - rejected_reference_only
+  - rejected_duplicate
+
+auxiliary_policy:
+  engineered_biological_status: auxiliary_engineered_biological_evidence
+  reason_not_in_main_database: Activated sludge is an engineered wastewater-treatment matrix and is not considered natural environmental transformation evidence.
+  potential_use: Useful as auxiliary evidence for precursor biotransformation mechanisms, but excluded from the natural-environment PFAS transformation database.
 
 provenance:
   required_trace_fields:
