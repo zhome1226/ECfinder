@@ -34,6 +34,15 @@ NATURAL_ALLOWED_SETTING_TYPES = {
     "surface_water_microcosm",
     "wetland_microcosm",
     "marine_or_estuarine_microcosm",
+    "AFFF_contaminated_groundwater_field_site",
+    "contaminated_aquifer",
+    "soil_microcosm_from_field_sample",
+    "sediment_microcosm_from_field_sample",
+    "groundwater_microcosm_from_field_sample",
+    "surface_water_microcosm_from_field_sample",
+    "wetland_microcosm_from_field_sample",
+    "marine_or_estuarine_microcosm_from_field_sample",
+    "atmospheric_or_soil_environmental_transformation",
 }
 
 AUX_REASON = (

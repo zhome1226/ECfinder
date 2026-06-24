@@ -1,7 +1,7 @@
 # Stage 1.7 Output Validation
 
-- validated_jsonl_count: 0
-- validated_csv_data_row_count: 0
+- validated_jsonl_count: 4
+- validated_csv_data_row_count: 4
 - auxiliary_jsonl_count: 8
 - auxiliary_csv_data_row_count: 8
 - manual_review_count: 0
@@ -13,7 +13,7 @@
 - csv_row_count_ok: true
 - validation_ok: true
 - stage2_ready_or_not: ready_for_targeted_stage2_search
-- zero_validated_reason: No records met natural-environment criteria.
+- zero_validated_reason:
 
 ## Errors
 

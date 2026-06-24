@@ -9,6 +9,15 @@ review_policy:
     - surface_water_microcosm
     - wetland_microcosm
     - marine_or_estuarine_microcosm
+    - AFFF_contaminated_groundwater_field_site
+    - contaminated_aquifer
+    - soil_microcosm_from_field_sample
+    - sediment_microcosm_from_field_sample
+    - groundwater_microcosm_from_field_sample
+    - surface_water_microcosm_from_field_sample
+    - wetland_microcosm_from_field_sample
+    - marine_or_estuarine_microcosm_from_field_sample
+    - atmospheric_or_soil_environmental_transformation
   main_database_excluded_setting_types:
     - activated_sludge
     - wastewater_treatment
