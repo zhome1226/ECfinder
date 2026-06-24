@@ -32,6 +32,16 @@ ENV_TERMS = [
     "natural attenuation",
     "microcosm",
 ]
+ENGINEERED_TREATMENT_TERMS = [
+    "advanced reduction process",
+    "electrochemical",
+    "plasma",
+    "incineration",
+    "hydrothermal",
+    "treatment technology",
+    "destruction",
+    "removal",
+]
 
 
 def deterministic_screen(record: dict) -> dict:
@@ -39,7 +49,14 @@ def deterministic_screen(record: dict) -> dict:
     pfas = [term for term in PFAS_TERMS if term in text]
     transformation = [term for term in TRANSFORMATION_TERMS if term in text]
     env = [term for term in ENV_TERMS if term in text]
-    if pfas and transformation and env:
+    engineered = [term for term in ENGINEERED_TREATMENT_TERMS if term in text]
+    if engineered and not any(term in text for term in ["soil", "sediment", "groundwater", "surface water", "natural attenuation", "microcosm"]):
+        decision = "exclude"
+        confidence = 0.65
+    elif engineered and pfas and transformation:
+        decision = "maybe"
+        confidence = 0.50
+    elif pfas and transformation and env:
         decision = "include"
         confidence = 0.78
     elif pfas and transformation:
@@ -52,8 +69,8 @@ def deterministic_screen(record: dict) -> dict:
         "source_id": record.get("source_id"),
         "decision": decision,
         "confidence": confidence,
-        "reason": f"pfas={bool(pfas)} transformation={bool(transformation)} environment={bool(env)}",
-        "matched_terms": sorted(set(pfas + transformation + env)),
+        "reason": f"pfas={bool(pfas)} transformation={bool(transformation)} environment={bool(env)} engineered_treatment={bool(engineered)}",
+        "matched_terms": sorted(set(pfas + transformation + env + engineered)),
         "screening_method": "deterministic_terms",
     }
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 from ecfinder.download.pdf_downloader import acquire_screened_sources
@@ -64,12 +65,42 @@ def write_stage1_summary(root: Path) -> None:
     ]:
         path = root / rel
         counts[rel] = sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip()) if path.exists() else 0
+    decisions: dict[str, int] = {}
+    screened_path = root / "data" / "interim" / "screened_sources.jsonl"
+    if screened_path.exists():
+        for line in screened_path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                item = json.loads(line)
+                decisions[item.get("decision", "unknown")] = decisions.get(item.get("decision", "unknown"), 0) + 1
+
+    download_status: dict[str, int] = {}
+    download_path = root / "data" / "interim" / "download_status.jsonl"
+    if download_path.exists():
+        for line in download_path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                item = json.loads(line)
+                key = f"{item.get('download_status', 'unknown')}:{item.get('candidate_kind', 'unknown')}"
+                download_status[key] = download_status.get(key, 0) + 1
+
+    raw_files = [
+        path
+        for path in (root / "data" / "raw").rglob("*")
+        if path.is_file() and path.name != ".gitkeep"
+    ]
+
     lines = ["# Stage 1 Summary", "", "| Artifact | Records |", "|---|---:|"]
     lines.extend(f"| `{rel}` | {count} |" for rel, count in counts.items())
     lines.extend(
         [
             "",
-            "Raw PDFs and publisher HTML are ignored by Git. This stage currently provides the auditable pipeline scaffold and any generated metadata outputs.",
+            "## Pilot Status",
+            "",
+            f"- Screening decisions: `{json.dumps(decisions, sort_keys=True)}`",
+            f"- Download dry-run candidates: `{json.dumps(download_status, sort_keys=True)}`",
+            f"- Raw files present outside `.gitkeep`: {len(raw_files)}",
+            "- No copyrighted PDF or publisher HTML is committed.",
+            "- LLM extraction is scaffolded but not executed because no LLM runtime is configured in this repository.",
+            "- Full-text parsing and chunking remain empty until lawful full text is acquired.",
             "",
         ]
     )
