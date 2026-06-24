@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections import Counter
 from pathlib import Path
 
+from ecfinder.agents.codex_extract_agent import prepare_extract_tasks
+from ecfinder.agents.codex_reextract_agent import prepare_reextract_tasks
+from ecfinder.agents.codex_review_agent import prepare_review_tasks
+from ecfinder.agents.codex_screen_agent import prepare_screen_tasks
 from ecfinder.download.pdf_downloader import acquire_screened_sources
 from ecfinder.download.semantic_screen import screen_search_results
 from ecfinder.extract.llm_extractor import extract_from_chunks_stub
@@ -129,6 +134,39 @@ def write_failure_analysis(root: Path) -> None:
     )
 
 
+def write_stage1_5_audit(root: Path) -> None:
+    extracted = _load_jsonl(root / "data" / "extracted" / "pfas_transformation_records_codex_raw.jsonl")
+    validated = _load_jsonl(root / "data" / "reviewed" / "pfas_transformation_records_validated.jsonl")
+    manual = _load_jsonl(root / "data" / "reviewed" / "manual_review_records.jsonl")
+    rejected = _load_jsonl(root / "data" / "reviewed" / "rejected_records.jsonl")
+    reextract = _load_jsonl(root / "data" / "reviewed" / "reextraction_attempts.jsonl")
+    status_counts = Counter(record.get("review", {}).get("review_status") or record.get("reviewer_status") for record in rejected)
+    lines = [
+        "# Stage 1.5 Codex Audit",
+        "",
+        "- Codex semantic mode does not require `OPENAI_API_KEY`.",
+        "- The CLI prepares Codex task packets; the interactive Codex session must write the semantic outputs.",
+        "",
+        "| Artifact | Count |",
+        "|---|---:|",
+        f"| codex raw records | {len(extracted)} |",
+        f"| validated records | {len(validated)} |",
+        f"| manual review records | {len(manual)} |",
+        f"| rejected records | {len(rejected)} |",
+        f"| re-extraction attempts | {len(reextract)} |",
+        "",
+        f"Rejected status counts: `{json.dumps(status_counts, sort_keys=True)}`",
+        "",
+    ]
+    (root / "reports" / "stage1_5_codex_summary.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def _load_jsonl(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
 def parse_downloaded_sources(root: Path) -> list[dict]:
     from ecfinder.utils.hashing import sha256_text
     from ecfinder.utils.logging import read_jsonl, write_jsonl
@@ -170,7 +208,9 @@ def main(argv: list[str] | None = None) -> int:
     search.add_argument("--limit", type=int, default=10)
     search.add_argument("--sources", default="crossref,openalex")
 
-    sub.add_parser("screen")
+    screen = sub.add_parser("screen")
+    screen.add_argument("--mode", choices=["fallback", "codex"], default="fallback")
+    screen.add_argument("--limit", type=int, default=None)
 
     download = sub.add_parser("download")
     download.add_argument("--limit", type=int, default=10)
@@ -178,8 +218,21 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("parse")
     sub.add_parser("chunk")
+    extract = sub.add_parser("extract")
+    extract.add_argument("--mode", choices=["fallback", "codex"], default="fallback")
+    extract.add_argument("--top-chunks", type=int, default=30)
+    extract.add_argument("--include-reextract-chunks", action="store_true")
+
     sub.add_parser("extract-stub")
-    sub.add_parser("review")
+
+    review = sub.add_parser("review")
+    review.add_argument("--mode", choices=["fallback", "codex"], default="fallback")
+
+    reextract = sub.add_parser("reextract")
+    reextract.add_argument("--mode", choices=["fallback", "codex"], default="fallback")
+    reextract.add_argument("--max-attempts", type=int, default=2)
+
+    sub.add_parser("audit-stage1-5")
     sub.add_parser("summary")
 
     args = parser.parse_args(argv)
@@ -194,19 +247,37 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "search":
         run_search(root, limit=args.limit, sources=[item.strip() for item in args.sources.split(",") if item.strip()])
     elif args.command == "screen":
-        screen_search_results(root)
+        if args.mode == "codex":
+            prepare_screen_tasks(root, limit=args.limit)
+        else:
+            screen_search_results(root)
     elif args.command == "download":
         acquire_screened_sources(root, limit=args.limit, dry_run=not args.execute)
     elif args.command == "parse":
         parse_downloaded_sources(root)
     elif args.command == "chunk":
         chunk_parsed_sections(root)
+    elif args.command == "extract":
+        if args.mode == "codex":
+            prepare_extract_tasks(root, top_chunks=args.top_chunks, include_reextract_chunks=args.include_reextract_chunks)
+        else:
+            extract_from_chunks_stub(root)
     elif args.command == "extract-stub":
         extract_from_chunks_stub(root)
     elif args.command == "review":
-        review_records(root)
-        build_reextract_tasks(root)
-        write_failure_analysis(root)
+        if args.mode == "codex":
+            prepare_review_tasks(root)
+        else:
+            review_records(root)
+            build_reextract_tasks(root)
+            write_failure_analysis(root)
+    elif args.command == "reextract":
+        if args.mode == "codex":
+            prepare_reextract_tasks(root, max_attempts=args.max_attempts)
+        else:
+            build_reextract_tasks(root)
+    elif args.command == "audit-stage1-5":
+        write_stage1_5_audit(root)
     elif args.command == "summary":
         write_stage1_summary(root)
     return 0
