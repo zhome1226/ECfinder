@@ -9,7 +9,7 @@ The repository is designed for traceable literature discovery, source screening,
 - Search literature about PFAS transformation under natural environmental conditions.
 - Screen titles and abstracts before acquiring full text.
 - Store copyright PDFs only under `data/raw/pdfs/`; this path is ignored by Git.
-- Parse available full text into sections, chunks, table/figure/caption references, and source hashes.
+- Parse available full text into local ignored section/chunk text, plus committed section/chunk indexes with hashes.
 - Extract transformation pathway records with source-level provenance.
 - Review each record against schema and evidence rules.
 
@@ -24,7 +24,7 @@ Every accepted transformation record must preserve `source_id`, `chunk_id`, page
 
 ## Copyright Boundary
 
-Do not commit copyrighted PDFs or publisher HTML. Commit metadata, hashes, logs, chunk indexes, extraction outputs, review outputs, and reports only.
+Do not commit copyrighted PDFs, publisher HTML, or full parsed chunk text. Commit metadata, hashes, logs, chunk indexes, extraction outputs, review outputs, and reports only.
 
 ## Local Commands
 

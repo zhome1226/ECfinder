@@ -2,6 +2,10 @@ data/raw/pdfs/*
 !data/raw/pdfs/.gitkeep
 data/raw/html/*
 !data/raw/html/.gitkeep
+data/raw/text/*
+!data/raw/text/.gitkeep
+data/raw/chunks/*
+!data/raw/chunks/.gitkeep
 *.pdf
 *.tmp
 .env

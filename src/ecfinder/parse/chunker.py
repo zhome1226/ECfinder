@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ecfinder.utils.hashing import stable_id
+from ecfinder.utils.hashing import sha256_text, stable_id
 from ecfinder.utils.logging import read_jsonl, write_jsonl
 
 
@@ -64,9 +64,18 @@ def score_chunk(text: str) -> float:
 
 def chunk_parsed_sections(root: str | Path) -> list[dict]:
     repo_root = Path(root)
+    raw_sections = repo_root / "data" / "raw" / "text" / "parsed_sections_text.jsonl"
+    section_path = raw_sections if raw_sections.exists() else repo_root / "data" / "interim" / "parsed_sections.jsonl"
     chunks = []
-    for section in read_jsonl(repo_root / "data" / "interim" / "parsed_sections.jsonl"):
+    for section in read_jsonl(section_path):
         chunks.extend(chunk_section(section))
     chunks.sort(key=lambda item: item["weight"], reverse=True)
-    write_jsonl(repo_root / "data" / "interim" / "chunks.jsonl", chunks)
-    return chunks
+    public_chunks = []
+    raw_chunk_text = []
+    for chunk in chunks:
+        text = chunk.pop("text", "")
+        raw_chunk_text.append({**chunk, "text": text})
+        public_chunks.append({**chunk, "text_hash": sha256_text(text), "char_count": len(text)})
+    write_jsonl(repo_root / "data" / "raw" / "chunks" / "chunk_text.jsonl", raw_chunk_text)
+    write_jsonl(repo_root / "data" / "interim" / "chunks.jsonl", public_chunks)
+    return public_chunks

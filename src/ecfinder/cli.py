@@ -10,6 +10,8 @@ from ecfinder.download.pdf_downloader import acquire_screened_sources
 from ecfinder.download.semantic_screen import screen_search_results
 from ecfinder.extract.llm_extractor import extract_from_chunks_stub
 from ecfinder.parse.chunker import chunk_parsed_sections
+from ecfinder.parse.html_parser import parse_html
+from ecfinder.parse.pdf_parser import parse_pdf
 from ecfinder.review.reextractor import build_reextract_tasks
 from ecfinder.review.rule_checks import review_records
 from ecfinder.search.search_runner import run_search
@@ -118,6 +120,36 @@ def write_failure_analysis(root: Path) -> None:
     )
 
 
+def parse_downloaded_sources(root: Path) -> list[dict]:
+    from ecfinder.utils.hashing import sha256_text
+    from ecfinder.utils.logging import read_jsonl, write_jsonl
+
+    raw_sections = []
+    public_index = []
+    for item in read_jsonl(root / "data" / "interim" / "download_status.jsonl"):
+        if item.get("download_status") != "downloaded" or not item.get("local_path"):
+            continue
+        local_path = root / item["local_path"]
+        if not local_path.exists():
+            continue
+        suffix = local_path.suffix.lower()
+        if suffix == ".pdf":
+            sections = parse_pdf(local_path, item["source_id"])
+        elif suffix in {".html", ".htm"}:
+            sections = parse_html(local_path, item["source_id"])
+        else:
+            sections = []
+        for section in sections:
+            text = section.get("text") or ""
+            raw_sections.append(section)
+            public = {key: value for key, value in section.items() if key != "text"}
+            public.update({"text_hash": sha256_text(text), "char_count": len(text), "word_count": len(text.split())})
+            public_index.append(public)
+    write_jsonl(root / "data" / "raw" / "text" / "parsed_sections_text.jsonl", raw_sections)
+    write_jsonl(root / "data" / "interim" / "parsed_sections.jsonl", public_index)
+    return public_index
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="ecfinder")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -135,6 +167,7 @@ def main(argv: list[str] | None = None) -> int:
     download.add_argument("--limit", type=int, default=10)
     download.add_argument("--execute", action="store_true", help="Actually download open PDF URLs.")
 
+    sub.add_parser("parse")
     sub.add_parser("chunk")
     sub.add_parser("extract-stub")
     sub.add_parser("review")
@@ -155,6 +188,8 @@ def main(argv: list[str] | None = None) -> int:
         screen_search_results(root)
     elif args.command == "download":
         acquire_screened_sources(root, limit=args.limit, dry_run=not args.execute)
+    elif args.command == "parse":
+        parse_downloaded_sources(root)
     elif args.command == "chunk":
         chunk_parsed_sections(root)
     elif args.command == "extract-stub":
