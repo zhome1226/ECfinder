@@ -8,7 +8,7 @@
 | rejected_count | 16 |
 | reextraction_attempt_count | 26 |
 | format_issues_fixed | 0 |
-| stage2_search_started_after_preflight | false |
+| stage2_search_started_after_preflight | true |
 
 All reviewed JSONL files were parsed with one complete JSON object per non-empty line. No embedded evidence quote newline broke the JSONL row structure, and no line contained multiple JSON objects.
 

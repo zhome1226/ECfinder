@@ -1,0 +1,16 @@
+{"error": null, "provider": "openalex", "query_family": "A", "search_hits": 25, "unique_candidates": 25}
+{"error": null, "provider": "crossref", "query_family": "A", "search_hits": 15, "unique_candidates": 15}
+{"error": null, "provider": "openalex", "query_family": "B", "search_hits": 25, "unique_candidates": 5}
+{"error": null, "provider": "crossref", "query_family": "B", "search_hits": 15, "unique_candidates": 13}
+{"error": null, "provider": "openalex", "query_family": "C", "search_hits": 25, "unique_candidates": 23}
+{"error": null, "provider": "crossref", "query_family": "C", "search_hits": 15, "unique_candidates": 15}
+{"error": null, "provider": "openalex", "query_family": "D", "search_hits": 25, "unique_candidates": 19}
+{"error": null, "provider": "crossref", "query_family": "D", "search_hits": 15, "unique_candidates": 14}
+{"error": null, "provider": "openalex", "query_family": "E", "search_hits": 22, "unique_candidates": 15}
+{"error": null, "provider": "crossref", "query_family": "E", "search_hits": 15, "unique_candidates": 15}
+{"error": null, "provider": "openalex", "query_family": "F", "search_hits": 25, "unique_candidates": 16}
+{"error": null, "provider": "crossref", "query_family": "F", "search_hits": 15, "unique_candidates": 11}
+{"error": null, "provider": "openalex", "query_family": "G", "search_hits": 24, "unique_candidates": 18}
+{"error": null, "provider": "crossref", "query_family": "G", "search_hits": 15, "unique_candidates": 14}
+{"error": null, "provider": "openalex", "query_family": "H", "search_hits": 25, "unique_candidates": 15}
+{"error": null, "provider": "crossref", "query_family": "H", "search_hits": 15, "unique_candidates": 10}
