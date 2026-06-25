@@ -125,11 +125,11 @@ def merge_stage2_validated(root: str | Path) -> dict:
     stage2_auxiliary_path = repo_root / "data" / "reviewed" / "stage2_auxiliary_records.jsonl"
     stage2_raw_path = repo_root / "data" / "extracted" / "stage2_pfas_transformation_records_raw.jsonl"
 
-    stage2_validated = [_with_stage2_quality_tier(record) for record in _read_json_objects_loose(stage2_validated_path)]
-    stage2_manual = _read_json_objects_loose(stage2_manual_path)
-    stage2_rejected = _read_json_objects_loose(stage2_rejected_path)
-    stage2_auxiliary = _read_json_objects_loose(stage2_auxiliary_path)
-    stage2_raw = _read_json_objects_loose(stage2_raw_path)
+    stage2_validated = [_normalize_record(_with_stage2_quality_tier(record)) for record in _read_json_objects_loose(stage2_validated_path)]
+    stage2_manual = [_normalize_record(record) for record in _read_json_objects_loose(stage2_manual_path)]
+    stage2_rejected = [_normalize_record(record) for record in _read_json_objects_loose(stage2_rejected_path)]
+    stage2_auxiliary = [_normalize_record(record) for record in _read_json_objects_loose(stage2_auxiliary_path)]
+    stage2_raw = [_normalize_record(record) for record in _read_json_objects_loose(stage2_raw_path)]
 
     if not stage2_raw or {record.get("record_id") for record in stage2_raw} == {
         record.get("record_id") for record in stage2_validated
@@ -138,7 +138,7 @@ def merge_stage2_validated(root: str | Path) -> dict:
     else:
         tiered_by_id = {record.get("record_id"): record for record in stage2_validated}
         stage2_raw = [
-            _with_stage2_quality_tier(record) if record.get("record_id") in tiered_by_id else record
+            _normalize_record(_with_stage2_quality_tier(record)) if record.get("record_id") in tiered_by_id else _normalize_record(record)
             for record in stage2_raw
         ]
 
@@ -201,6 +201,20 @@ def _with_stage2_quality_tier(record: dict) -> dict:
         review["main_database_use"] = "tentative_evidence"
     out["review"] = review
     return out
+
+
+def _normalize_record(record: dict) -> dict:
+    return _normalize_value(deepcopy(record))
+
+
+def _normalize_value(value):
+    if isinstance(value, dict):
+        return {key: _normalize_value(child) for key, child in value.items()}
+    if isinstance(value, list):
+        return [_normalize_value(child) for child in value]
+    if isinstance(value, str):
+        return value.replace("\r\n", "\\n").replace("\r", "\\n").replace("\n", "\\n")
+    return value
 
 
 def _read_json_objects_loose(path: Path) -> list[dict]:
@@ -389,21 +403,34 @@ def write_validated_csv(path: Path, records: list[dict]) -> None:
     fields = [
         "record_id",
         "source_id",
+        "query_family",
         "doi",
         "title",
         "year",
         "journal",
         "chunk_id",
-        "page",
         "section",
+        "table",
         "parent_name",
+        "parent_synonyms",
+        "parent_class",
         "product_name",
+        "product_synonyms",
+        "product_class",
+        "reaction_type",
+        "reaction_description",
         "setting_type",
         "environment_matrix",
-        "review_status",
+        "environment_type",
+        "redox_condition",
+        "microbial_condition",
+        "duration",
+        "identification_confidence",
         "evidence_tier",
         "requires_manual_confirmation",
         "main_database_use",
+        "review_status",
+        "review_confidence",
         "evidence_quote",
     ]
     _write_csv(path, records, fields, _validated_row)
@@ -434,30 +461,53 @@ def _write_csv(path: Path, records: list[dict], fields: list[str], row_fn) -> No
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
         for record in records:
-            writer.writerow(row_fn(record))
+            writer.writerow(_csv_safe_row(row_fn(record)))
+
+
+def _csv_safe_row(row: dict) -> dict:
+    return {
+        key: value.replace("\r\n", "\\n").replace("\r", "\\n").replace("\n", "\\n")
+        if isinstance(value, str)
+        else value
+        for key, value in row.items()
+    }
 
 
 def _validated_row(record: dict) -> dict:
     conditions = record.get("conditions") or {}
     location = record.get("evidence_location") or {}
+    review = record.get("review") or {}
     return {
         "record_id": record.get("record_id"),
         "source_id": record.get("source_id"),
+        "query_family": record.get("query_family"),
         "doi": record.get("doi"),
         "title": record.get("title"),
         "year": record.get("year"),
         "journal": record.get("journal"),
         "chunk_id": record.get("chunk_id"),
-        "page": location.get("page"),
         "section": location.get("section"),
+        "table": location.get("table"),
         "parent_name": (record.get("parent_compound") or {}).get("name"),
+        "parent_synonyms": json.dumps((record.get("parent_compound") or {}).get("synonyms") or [], ensure_ascii=False),
+        "parent_class": (record.get("parent_compound") or {}).get("compound_class"),
         "product_name": (record.get("product_compound") or {}).get("name"),
+        "product_synonyms": json.dumps((record.get("product_compound") or {}).get("synonyms") or [], ensure_ascii=False),
+        "product_class": (record.get("product_compound") or {}).get("compound_class"),
+        "reaction_type": (record.get("transformation") or {}).get("reaction_type"),
+        "reaction_description": (record.get("transformation") or {}).get("reaction_description"),
         "setting_type": conditions.get("setting_type"),
         "environment_matrix": conditions.get("environment_matrix"),
+        "environment_type": conditions.get("environment_type"),
+        "redox_condition": conditions.get("redox_condition"),
+        "microbial_condition": conditions.get("microbial_condition"),
+        "duration": conditions.get("duration"),
+        "identification_confidence": (record.get("evidence") or {}).get("identification_confidence"),
+        "evidence_tier": review.get("evidence_tier"),
+        "requires_manual_confirmation": review.get("requires_manual_confirmation"),
+        "main_database_use": review.get("main_database_use"),
         "review_status": _record_status(record),
-        "evidence_tier": (record.get("review") or {}).get("evidence_tier"),
-        "requires_manual_confirmation": (record.get("review") or {}).get("requires_manual_confirmation"),
-        "main_database_use": (record.get("review") or {}).get("main_database_use"),
+        "review_confidence": review.get("review_confidence"),
         "evidence_quote": record.get("evidence_quote"),
     }
 

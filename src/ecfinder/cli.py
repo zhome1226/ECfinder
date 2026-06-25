@@ -248,6 +248,34 @@ def write_stage2_1_audit(root: Path) -> dict:
     if result["errors"]:
         summary.extend(["## Validation Errors", "", *(f"- {error}" for error in result["errors"]), ""])
     (root / "reports" / "stage2_1_output_fix_summary.md").write_text("\n".join(summary), encoding="utf-8")
+    serialization = [
+        "# Stage 2.1b Serialization Validation",
+        "",
+        f"- stage2_validated_jsonl_parse_ok = {str(result['stage2_validated_jsonl_parse_ok']).lower()}",
+        f"- stage2_validated_jsonl_line_count = {result['stage2_validated_jsonl_line_count']}",
+        f"- stage2_manual_jsonl_parse_ok = {str(result['stage2_manual_jsonl_parse_ok']).lower()}",
+        f"- stage2_manual_jsonl_line_count = {result['stage2_manual_jsonl_line_count']}",
+        f"- stage2_rejected_jsonl_parse_ok = {str(result['stage2_rejected_jsonl_parse_ok']).lower()}",
+        f"- stage2_rejected_jsonl_line_count = {result['stage2_rejected_jsonl_line_count']}",
+        f"- main_database_jsonl_parse_ok = {str(result['main_database_jsonl_parse_ok']).lower()}",
+        f"- main_database_jsonl_line_count = {result['main_database_jsonl_line_count']}",
+        f"- main_database_csv_has_header = {str(result['main_database_csv_has_header']).lower()}",
+        f"- main_database_csv_data_rows = {result['main_database_csv_rows']}",
+        f"- confirmed_product_count = {result['confirmed_product_count']}",
+        f"- tentative_product_count = {result['tentative_product_count']}",
+        f"- all_expected_counts_match = {str(result['all_expected_counts_match']).lower()}",
+        f"- validation_ok = {str(result['validation_ok']).lower()}",
+        f"- stage2_2_ready_or_not = {result['stage2_2_ready_or_not']}",
+        "",
+        "## Errors",
+        "",
+        *(f"- {error}" for error in result["errors"]),
+        "",
+    ]
+    (root / "reports" / "stage2_1b_serialization_validation.md").write_text(
+        "\n".join(serialization),
+        encoding="utf-8",
+    )
 
     audit_lines = [
         "# Stage 2 Validated Records Audit",
@@ -647,21 +675,27 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "validate-stage2-outputs":
         result = validate_stage2_outputs(root)
         report = [
-            "# Stage 2.1 Output Validation",
+            "# Stage 2.1b Strict Output Validation",
             "",
-            f"- stage2_validated_jsonl_count: {result['stage2_validated_jsonl_count']}",
-            f"- stage2_manual_review_count: {result['stage2_manual_review_count']}",
-            f"- stage2_rejected_count: {result['stage2_rejected_count']}",
+            f"- stage2_validated_jsonl_parse_ok: {str(result['stage2_validated_jsonl_parse_ok']).lower()}",
+            f"- stage2_validated_jsonl_line_count: {result['stage2_validated_jsonl_line_count']}",
+            f"- stage2_manual_jsonl_parse_ok: {str(result['stage2_manual_jsonl_parse_ok']).lower()}",
+            f"- stage2_manual_jsonl_line_count: {result['stage2_manual_jsonl_line_count']}",
+            f"- stage2_rejected_jsonl_parse_ok: {str(result['stage2_rejected_jsonl_parse_ok']).lower()}",
+            f"- stage2_rejected_jsonl_line_count: {result['stage2_rejected_jsonl_line_count']}",
             f"- stage2_auxiliary_count: {result['stage2_auxiliary_count']}",
             f"- stage2_raw_count: {result['stage2_raw_count']}",
-            f"- main_database_validated_count: {result['main_database_validated_count']}",
-            f"- main_database_csv_rows: {result['main_database_csv_rows']}",
+            f"- main_database_jsonl_parse_ok: {str(result['main_database_jsonl_parse_ok']).lower()}",
+            f"- main_database_jsonl_line_count: {result['main_database_jsonl_line_count']}",
+            f"- main_database_csv_has_header: {str(result['main_database_csv_has_header']).lower()}",
+            f"- main_database_csv_data_rows: {result['main_database_csv_rows']}",
             f"- jsonl_parse_ok: {str(result['jsonl_parse_ok']).lower()}",
             f"- main_database_merge_ok: {str(result['main_database_merge_ok']).lower()}",
-            f"- activated_sludge_excluded_from_main: {str(result['activated_sludge_excluded_from_main']).lower()}",
-            f"- wastewater_treatment_excluded_from_main: {str(result['wastewater_treatment_excluded_from_main']).lower()}",
+            f"- main_database_contains_activated_sludge: {str(result['main_database_contains_activated_sludge']).lower()}",
+            f"- main_database_contains_wastewater: {str(result['main_database_contains_wastewater']).lower()}",
             f"- confirmed_product_count: {result['confirmed_product_count']}",
             f"- tentative_product_count: {result['tentative_product_count']}",
+            f"- all_expected_counts_match: {str(result['all_expected_counts_match']).lower()}",
             f"- validation_ok: {str(result['validation_ok']).lower()}",
             f"- stage2_2_ready_or_not: {result['stage2_2_ready_or_not']}",
             "",

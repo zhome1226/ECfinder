@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 from pathlib import Path
 
 from ecfinder.review.export_validated import ENGINEERED_TERMS, NATURAL_ALLOWED_SETTING_TYPES
@@ -125,26 +126,27 @@ def validate_outputs(root: str | Path) -> dict:
 
 def validate_stage2_outputs(root: str | Path) -> dict:
     repo_root = Path(root)
-    jsonl_records: dict[str, list[dict]] = {}
-    parse_errors: list[str] = []
-    for rel in STAGE2_JSONL_FILES:
-        records, file_errors = _read_jsonl_checked(repo_root / rel)
-        jsonl_records[rel] = records
-        parse_errors.extend(file_errors)
-
-    stage2_validated = jsonl_records["data/reviewed/stage2_pfas_transformation_records_validated.jsonl"]
-    stage2_manual = jsonl_records["data/reviewed/stage2_manual_review_records.jsonl"]
-    stage2_rejected = jsonl_records["data/reviewed/stage2_rejected_records.jsonl"]
-    stage2_auxiliary = jsonl_records["data/reviewed/stage2_auxiliary_records.jsonl"]
-    stage2_raw = jsonl_records["data/extracted/stage2_pfas_transformation_records_raw.jsonl"]
-    main_validated, main_parse_errors = _read_jsonl_checked(
-        repo_root / "data" / "reviewed" / "pfas_transformation_records_validated.jsonl"
-    )
-    parse_errors.extend(main_parse_errors)
-    main_csv_rows = _csv_count(repo_root / "data" / "reviewed" / "pfas_transformation_records_validated.csv")
-
     errors: list[str] = []
-    errors.extend(parse_errors)
+
+    def load_or_error(rel: str) -> tuple[list[dict], bool]:
+        try:
+            return read_jsonl_strict(repo_root / rel), True
+        except ValueError as exc:
+            errors.append(str(exc))
+            return [], False
+
+    stage2_validated, stage2_validated_parse_ok = load_or_error(
+        "data/reviewed/stage2_pfas_transformation_records_validated.jsonl"
+    )
+    stage2_manual, stage2_manual_parse_ok = load_or_error("data/reviewed/stage2_manual_review_records.jsonl")
+    stage2_rejected, stage2_rejected_parse_ok = load_or_error("data/reviewed/stage2_rejected_records.jsonl")
+    stage2_auxiliary, stage2_auxiliary_parse_ok = load_or_error("data/reviewed/stage2_auxiliary_records.jsonl")
+    stage2_raw, stage2_raw_parse_ok = load_or_error("data/extracted/stage2_pfas_transformation_records_raw.jsonl")
+    main_validated, main_database_parse_ok = load_or_error("data/reviewed/pfas_transformation_records_validated.jsonl")
+    main_csv_has_header, main_csv_rows = _csv_header_and_count(
+        repo_root / "data" / "reviewed" / "pfas_transformation_records_validated.csv"
+    )
+
     expected_counts = {
         "stage2 validated record count": (len(stage2_validated), 4),
         "stage2 manual review record count": (len(stage2_manual), 2),
@@ -155,17 +157,19 @@ def validate_stage2_outputs(root: str | Path) -> dict:
     for label, (actual, expected) in expected_counts.items():
         if actual != expected:
             errors.append(f"{label} expected {expected}, got {actual}")
+    if not main_csv_has_header:
+        errors.append("main database CSV is missing a header")
 
     main_text = "\n".join(_joined_record_text(record) for record in main_validated)
-    main_contains_activated_sludge = "activated sludge" in main_text or "activated-sludge" in main_text
-    main_contains_wastewater_treatment = (
+    main_database_contains_activated_sludge = "activated sludge" in main_text or "activated-sludge" in main_text
+    main_database_contains_wastewater = (
         "wastewater treatment" in main_text
         or "wastewater-treatment" in main_text
         or "wwtp" in main_text
     )
-    if main_contains_activated_sludge:
+    if main_database_contains_activated_sludge:
         errors.append("main database contains activated sludge")
-    if main_contains_wastewater_treatment:
+    if main_database_contains_wastewater:
         errors.append("main database contains wastewater treatment or WWTP")
 
     for index, record in enumerate(main_validated, start=1):
@@ -210,50 +214,83 @@ def validate_stage2_outputs(root: str | Path) -> dict:
         if review.get("main_database_use") != "core_evidence":
             errors.append(f"confirmed record {record.get('record_id')} missing main_database_use=core_evidence")
 
-    jsonl_parse_ok = not parse_errors
-    main_database_merge_ok = len(main_validated) == 4 and main_csv_rows == 4 and not errors
+    all_expected_counts_match = (
+        len(stage2_validated) == 4
+        and len(stage2_manual) == 2
+        and len(stage2_rejected) == 11
+        and len(main_validated) == 4
+        and main_csv_rows == 4
+    )
+    jsonl_parse_ok = all(
+        [
+            stage2_validated_parse_ok,
+            stage2_manual_parse_ok,
+            stage2_rejected_parse_ok,
+            stage2_auxiliary_parse_ok,
+            stage2_raw_parse_ok,
+            main_database_parse_ok,
+        ]
+    )
+    main_database_merge_ok = all_expected_counts_match and main_csv_has_header and not errors
+    validation_ok = not errors
     return {
         "stage2_validated_jsonl_count": len(stage2_validated),
+        "stage2_validated_jsonl_parse_ok": stage2_validated_parse_ok,
+        "stage2_validated_jsonl_line_count": len(stage2_validated),
         "stage2_manual_review_count": len(stage2_manual),
+        "stage2_manual_jsonl_parse_ok": stage2_manual_parse_ok,
+        "stage2_manual_jsonl_line_count": len(stage2_manual),
         "stage2_rejected_count": len(stage2_rejected),
+        "stage2_rejected_jsonl_parse_ok": stage2_rejected_parse_ok,
+        "stage2_rejected_jsonl_line_count": len(stage2_rejected),
         "stage2_auxiliary_count": len(stage2_auxiliary),
         "stage2_raw_count": len(stage2_raw),
         "main_database_validated_count": len(main_validated),
+        "main_database_jsonl_parse_ok": main_database_parse_ok,
+        "main_database_jsonl_line_count": len(main_validated),
+        "main_database_csv_has_header": main_csv_has_header,
         "main_database_csv_rows": main_csv_rows,
         "jsonl_parse_ok": jsonl_parse_ok,
         "main_database_merge_ok": main_database_merge_ok,
-        "activated_sludge_excluded_from_main": not main_contains_activated_sludge,
-        "wastewater_treatment_excluded_from_main": not main_contains_wastewater_treatment,
+        "main_database_contains_activated_sludge": main_database_contains_activated_sludge,
+        "main_database_contains_wastewater": main_database_contains_wastewater,
+        "activated_sludge_excluded_from_main": not main_database_contains_activated_sludge,
+        "wastewater_treatment_excluded_from_main": not main_database_contains_wastewater,
         "confirmed_product_count": len(confirmed),
         "tentative_product_count": len(tentative),
+        "all_expected_counts_match": all_expected_counts_match,
         "errors": errors,
-        "ok": not errors,
-        "validation_ok": not errors,
-        "stage2_2_ready_or_not": "ready_for_targeted_followup" if not errors else "not_ready_fix_stage2_outputs_first",
+        "ok": validation_ok,
+        "validation_ok": validation_ok,
+        "stage2_2_ready_or_not": "ready_for_targeted_followup" if validation_ok else "not_ready",
     }
 
 
-def _read_jsonl_checked(path: Path) -> tuple[list[dict], list[str]]:
+def read_jsonl_strict(path: Path) -> list[dict]:
     records: list[dict] = []
-    errors: list[str] = []
     if not path.exists():
-        errors.append(f"missing JSONL file: {path}")
-        return records, errors
+        raise ValueError(f"missing JSONL file: {path}")
     with path.open("r", encoding="utf-8") as handle:
-        for line_number, line in enumerate(handle, start=1):
-            stripped = line.strip()
-            if not stripped:
+        for line_no, line in enumerate(handle, start=1):
+            if not line.strip():
                 continue
+            if re.search(r"}\s*{", line):
+                raise ValueError(f"{path}:{line_no} appears to contain multiple JSON objects on one line")
             try:
-                value = json.loads(stripped)
+                obj = json.loads(line)
             except json.JSONDecodeError as exc:
-                errors.append(f"{path}:{line_number} invalid JSONL: {exc.msg}")
-                continue
-            if not isinstance(value, dict):
-                errors.append(f"{path}:{line_number} JSONL line is not an object")
-                continue
-            records.append(value)
-    return records, errors
+                raise ValueError(f"{path}:{line_no} is not valid JSONL: {exc}") from exc
+            if not isinstance(obj, dict):
+                raise ValueError(f"{path}:{line_no} JSONL line is not an object")
+            records.append(obj)
+    return records
+
+
+def _read_jsonl_checked(path: Path) -> tuple[list[dict], list[str]]:
+    try:
+        return read_jsonl_strict(path), []
+    except ValueError as exc:
+        return [], [str(exc)]
 
 
 def _joined_record_text(record: dict) -> str:
@@ -276,3 +313,12 @@ def _csv_count(path: Path) -> int:
         return 0
     with path.open("r", encoding="utf-8", newline="") as handle:
         return sum(1 for _ in csv.DictReader(handle))
+
+
+def _csv_header_and_count(path: Path) -> tuple[bool, int]:
+    if not path.exists():
+        return False, 0
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        has_header = bool(reader.fieldnames)
+        return has_header, sum(1 for _ in reader)
