@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+from copy import deepcopy
 from pathlib import Path
 from typing import Iterable
 
@@ -115,6 +116,125 @@ def export_validated(root: str | Path) -> dict:
     }
 
 
+def merge_stage2_validated(root: str | Path) -> dict:
+    """Normalize Stage 2 outputs and merge accepted records into the main database."""
+    repo_root = Path(root)
+    stage2_validated_path = repo_root / "data" / "reviewed" / "stage2_pfas_transformation_records_validated.jsonl"
+    stage2_manual_path = repo_root / "data" / "reviewed" / "stage2_manual_review_records.jsonl"
+    stage2_rejected_path = repo_root / "data" / "reviewed" / "stage2_rejected_records.jsonl"
+    stage2_auxiliary_path = repo_root / "data" / "reviewed" / "stage2_auxiliary_records.jsonl"
+    stage2_raw_path = repo_root / "data" / "extracted" / "stage2_pfas_transformation_records_raw.jsonl"
+
+    stage2_validated = [_with_stage2_quality_tier(record) for record in _read_json_objects_loose(stage2_validated_path)]
+    stage2_manual = _read_json_objects_loose(stage2_manual_path)
+    stage2_rejected = _read_json_objects_loose(stage2_rejected_path)
+    stage2_auxiliary = _read_json_objects_loose(stage2_auxiliary_path)
+    stage2_raw = _read_json_objects_loose(stage2_raw_path)
+
+    if not stage2_raw or {record.get("record_id") for record in stage2_raw} == {
+        record.get("record_id") for record in stage2_validated
+    }:
+        stage2_raw = [deepcopy(record) for record in stage2_validated]
+    else:
+        tiered_by_id = {record.get("record_id"): record for record in stage2_validated}
+        stage2_raw = [
+            _with_stage2_quality_tier(record) if record.get("record_id") in tiered_by_id else record
+            for record in stage2_raw
+        ]
+
+    natural_validated = _dedupe_records(stage2_validated)
+    for index, record in enumerate(natural_validated, start=1):
+        if _contains_engineered_terms(record):
+            raise ValueError(f"Stage 2 validated record {index} contains excluded engineered-treatment context")
+        if _record_status(record) not in VALIDATED_STATUSES or not _is_natural_validated(record):
+            raise ValueError(f"Stage 2 validated record {index} does not satisfy natural-environment criteria")
+
+    write_jsonl(stage2_validated_path, natural_validated)
+    write_jsonl(stage2_manual_path, stage2_manual)
+    write_jsonl(stage2_rejected_path, stage2_rejected)
+    write_jsonl(stage2_auxiliary_path, stage2_auxiliary)
+    write_jsonl(stage2_raw_path, stage2_raw)
+
+    main_jsonl_path = repo_root / "data" / "reviewed" / "pfas_transformation_records_validated.jsonl"
+    main_csv_path = repo_root / "data" / "reviewed" / "pfas_transformation_records_validated.csv"
+    write_jsonl(main_jsonl_path, natural_validated)
+    write_validated_csv(main_csv_path, natural_validated)
+    write_validated_csv(
+        repo_root / "data" / "reviewed" / "stage2_pfas_transformation_records_validated.csv",
+        natural_validated,
+    )
+
+    return {
+        "stage2_validated": len(natural_validated),
+        "stage2_manual": len(stage2_manual),
+        "stage2_rejected": len(stage2_rejected),
+        "stage2_auxiliary": len(stage2_auxiliary),
+        "main_validated": len(natural_validated),
+        "confirmed_product_count": sum(
+            1 for record in natural_validated if (record.get("review") or {}).get("evidence_tier") == "confirmed_product"
+        ),
+        "tentative_product_count": sum(
+            1 for record in natural_validated if (record.get("review") or {}).get("evidence_tier") == "tentative_product"
+        ),
+    }
+
+
+def _with_stage2_quality_tier(record: dict) -> dict:
+    out = deepcopy(record)
+    evidence = out.get("evidence") or {}
+    product = (out.get("product_compound") or {}).get("name", "").lower()
+    identification = str(evidence.get("identification_confidence") or "").lower()
+    is_confirmed = (
+        ("level 1" in identification and "confirmed" in identification)
+        or product == "6:2 fluorotelomer thioether propionate"
+    )
+    review = dict(out.get("review") or {})
+    if is_confirmed:
+        review["review_status"] = "validated_high_confidence"
+        review["evidence_tier"] = "confirmed_product"
+        review["requires_manual_confirmation"] = False
+        review["main_database_use"] = "core_evidence"
+    else:
+        review["review_status"] = "validated_medium_confidence"
+        review["evidence_tier"] = "tentative_product"
+        review["requires_manual_confirmation"] = True
+        review["main_database_use"] = "tentative_evidence"
+    out["review"] = review
+    return out
+
+
+def _read_json_objects_loose(path: Path) -> list[dict]:
+    if not path.exists() or path.stat().st_size == 0:
+        return []
+    text = path.read_text(encoding="utf-8")
+    decoder = json.JSONDecoder()
+    index = 0
+    records: list[dict] = []
+    while index < len(text):
+        while index < len(text) and text[index].isspace():
+            index += 1
+        if index >= len(text):
+            break
+        value, end = decoder.raw_decode(text, index)
+        if not isinstance(value, dict):
+            raise ValueError(f"{path} contains a non-object JSON value")
+        records.append(value)
+        index = end
+    return records
+
+
+def _dedupe_records(records: Iterable[dict]) -> list[dict]:
+    seen: set[str] = set()
+    out: list[dict] = []
+    for record in records:
+        key = record.get("record_id") or json.dumps(record, sort_keys=True)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(record)
+    return out
+
+
 def _record_status(record: dict) -> str:
     review = record.get("review") or {}
     return review.get("review_status") or record.get("reviewer_status") or ""
@@ -134,6 +254,11 @@ def _condition_text(record: dict) -> str:
 
 def _is_engineered_biological(record: dict) -> bool:
     text = _condition_text(record)
+    return any(term in text for term in ENGINEERED_TERMS)
+
+
+def _contains_engineered_terms(record: dict) -> bool:
+    text = _record_text(record)
     return any(term in text for term in ENGINEERED_TERMS)
 
 
@@ -245,6 +370,21 @@ def _dedupe_rejections(records: Iterable[dict]) -> list[dict]:
     return out
 
 
+def _record_text(record: dict) -> str:
+    return " ".join(str(value) for value in _walk_values(record)).lower()
+
+
+def _walk_values(value):
+    if isinstance(value, dict):
+        for child in value.values():
+            yield from _walk_values(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _walk_values(child)
+    else:
+        yield value
+
+
 def write_validated_csv(path: Path, records: list[dict]) -> None:
     fields = [
         "record_id",
@@ -261,6 +401,9 @@ def write_validated_csv(path: Path, records: list[dict]) -> None:
         "setting_type",
         "environment_matrix",
         "review_status",
+        "evidence_tier",
+        "requires_manual_confirmation",
+        "main_database_use",
         "evidence_quote",
     ]
     _write_csv(path, records, fields, _validated_row)
@@ -312,6 +455,9 @@ def _validated_row(record: dict) -> dict:
         "setting_type": conditions.get("setting_type"),
         "environment_matrix": conditions.get("environment_matrix"),
         "review_status": _record_status(record),
+        "evidence_tier": (record.get("review") or {}).get("evidence_tier"),
+        "requires_manual_confirmation": (record.get("review") or {}).get("requires_manual_confirmation"),
+        "main_database_use": (record.get("review") or {}).get("main_database_use"),
         "evidence_quote": record.get("evidence_quote"),
     }
 

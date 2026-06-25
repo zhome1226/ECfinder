@@ -19,9 +19,11 @@ from ecfinder.parse.html_parser import parse_html
 from ecfinder.parse.pdf_parser import parse_pdf
 from ecfinder.review.export_validated import ENGINEERED_TERMS
 from ecfinder.review.export_validated import export_validated
+from ecfinder.review.export_validated import merge_stage2_validated
 from ecfinder.review.reextractor import build_reextract_tasks
 from ecfinder.review.rule_checks import review_records
 from ecfinder.review.validate_outputs import validate_outputs
+from ecfinder.review.validate_outputs import validate_stage2_outputs
 from ecfinder.search.search_runner import run_search
 from ecfinder.skills_inventory import write_inventory
 from ecfinder.utils.logging import write_jsonl
@@ -213,6 +215,112 @@ def write_stage1_6_audit(root: Path) -> None:
     _write_auxiliary_summary(root, auxiliary)
     _write_review_quality_audit_stage1_6(root, codex_raw, validated, auxiliary, manual, rejected, reextract)
     _write_stage2_targets(root)
+
+
+def write_stage2_1_audit(root: Path) -> dict:
+    result = validate_stage2_outputs(root)
+    stage2_validated = _load_jsonl(root / "data" / "reviewed" / "stage2_pfas_transformation_records_validated.jsonl")
+    stage2_manual = _load_jsonl(root / "data" / "reviewed" / "stage2_manual_review_records.jsonl")
+    stage2_rejected = _load_jsonl(root / "data" / "reviewed" / "stage2_rejected_records.jsonl")
+
+    summary = [
+        "# Stage 2.1 Output Fix Summary",
+        "",
+        f"- stage2_validated_jsonl_count = {result['stage2_validated_jsonl_count']}",
+        f"- stage2_manual_review_count = {result['stage2_manual_review_count']}",
+        f"- stage2_rejected_count = {result['stage2_rejected_count']}",
+        f"- main_database_validated_count = {result['main_database_validated_count']}",
+        f"- main_database_csv_rows = {result['main_database_csv_rows']}",
+        f"- jsonl_parse_ok = {str(result['jsonl_parse_ok']).lower()}",
+        f"- main_database_merge_ok = {str(result['main_database_merge_ok']).lower()}",
+        f"- activated_sludge_excluded_from_main = {str(result['activated_sludge_excluded_from_main']).lower()}",
+        f"- confirmed_product_count = {result['confirmed_product_count']}",
+        f"- tentative_product_count = {result['tentative_product_count']}",
+        f"- stage2_2_ready_or_not = {result['stage2_2_ready_or_not']}",
+        "",
+        "## Notes",
+        "",
+        "- Stage 2 JSONL outputs were normalized to one complete JSON object per line.",
+        "- The main natural-environment database contains only the 4 Stage 2 validated environmental-microcosm records.",
+        "- Stage 1 activated-sludge auxiliary records remain excluded from the main database.",
+        "",
+    ]
+    if result["errors"]:
+        summary.extend(["## Validation Errors", "", *(f"- {error}" for error in result["errors"]), ""])
+    (root / "reports" / "stage2_1_output_fix_summary.md").write_text("\n".join(summary), encoding="utf-8")
+
+    audit_lines = [
+        "# Stage 2 Validated Records Audit",
+        "",
+        "All 4 records currently come from one primary study: `10.1021/acs.estlett.8b00148`, *Biotransformation of AFFF Component 6:2 Fluorotelomer Thioether Amido Sulfonate Generates 6:2 Fluorotelomer Thioether Carboxylate under Sulfate-Reducing Conditions*.",
+        "",
+        "These records show that the pipeline has found its first natural-environment / environmental-microcosm evidence, but they do not mean the PFAS natural-transformation database is broadly covered. Stage 2.2 must keep targeting other parent classes and environmental media.",
+        "",
+    ]
+    for index, record in enumerate(stage2_validated, start=1):
+        parent = (record.get("parent_compound") or {}).get("name", "")
+        product = (record.get("product_compound") or {}).get("name", "")
+        conditions = record.get("conditions") or {}
+        review = record.get("review") or {}
+        accepted = (
+            "Primary-source evidence links the PFAS precursor to a named product in environmental-solids microcosms under sulfate-reducing conditions."
+        )
+        limitation = (
+            "Product assignment is standard-confirmed and suitable as core evidence."
+            if review.get("evidence_tier") == "confirmed_product"
+            else "Product assignment is tentative level 3 / suspect or nontargeted evidence and requires manual confirmation before quantitative synthesis."
+        )
+        audit_lines.extend(
+            [
+                f"## Record {index}: {parent} -> {product}",
+                "",
+                f"- DOI: {record.get('doi')}",
+                f"- setting_type: {conditions.get('setting_type')}",
+                f"- redox_condition: {conditions.get('redox_condition')}",
+                f"- evidence_quote: {record.get('evidence_quote')}",
+                f"- evidence_tier: {review.get('evidence_tier')}",
+                f"- review_status: {review.get('review_status')}",
+                f"- why_accepted: {accepted}",
+                f"- limitations: {limitation}",
+                "",
+            ]
+        )
+    (root / "reports" / "stage2_validated_records_audit.md").write_text("\n".join(audit_lines), encoding="utf-8")
+
+    followup_lines = [
+        "# Stage 2 Follow-up Plan",
+        "",
+        "Stage 2.2 should stay targeted. The immediate goal is to add independent primary evidence from other parent classes and environmental matrices, not to start broad quantitative synthesis.",
+        "",
+        "## Highest Priority",
+        "",
+        "- `10.1016/j.watres.2023.120941`: 6:2 FTSA in AFFF-impacted soils; likely direct parent-product transformation evidence in field soils.",
+        "- `10.1016/j.envpol.2016.01.069`: PAP aerobic biotransformation in soil; likely direct parent-product evidence for diPAP/PAP transformations.",
+        "- `10.1016/j.chemosphere.2016.03.062`: 6:2 FTSA transformation potential in aerobic and anaerobic sediment.",
+        "- `10.1016/j.chemosphere.2014.09.059`: PFOS production from sulfonamide derivatives in aerobic soil.",
+        "- `10.1016/j.envpol.2017.05.074`: PFOS precursor pathway kinetics in distinct soils.",
+        "- `10.1021/es0708722`: 8:2 FTOH biotransformation in soil and soil bacterial isolates.",
+        "",
+        "## Medium Priority",
+        "",
+        "- `10.1021/acs.est.4c06471`: soil microbiomes and fluorotelomer precursor biotransformation; likely relevant but needs parent-product evidence audit.",
+        "- `10.1021/acs.est.2c01867`: 6:2 FTSA fate under plant, nutrient, bioaugmentation, and soil microbiome interactions; field/soil relevance likely, full-text parsing needs repair.",
+        "",
+        "## Manual Full-text Required",
+        "",
+        "- `10.1021/acsestwater.5c00033`: FOSA in aerobic soils; likely important but full text was not lawfully available in the pilot run.",
+        "- For all Elsevier/ACS closed or poorly parsed targets above, prioritize lawful full-text access, publisher HTML, supporting information, institutional repositories, and table/pathway extraction.",
+        "",
+        "## Not Suitable Unless Primary Evidence Is Obtained",
+        "",
+        "- Review-only pathway diagrams, reference-list mentions, occurrence-only field studies, transport-only studies, and engineered treatment studies should remain excluded unless the original primary natural-environment evidence is retrieved and reviewed.",
+        "- Activated sludge, WWTP, bioreactor, AOP, plasma, electrochemical, ozonation, and other engineered-treatment evidence may be auxiliary only, never main-database evidence.",
+        "",
+        f"Current manual review records: {len(stage2_manual)}. Current Stage 2 rejected records: {len(stage2_rejected)}.",
+        "",
+    ]
+    (root / "reports" / "stage2_followup_plan.md").write_text("\n".join(followup_lines), encoding="utf-8")
+    return result
 
 
 def _write_auxiliary_summary(root: Path, auxiliary: list[dict]) -> None:
@@ -453,6 +561,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("export-validated")
     sub.add_parser("validate-outputs")
     sub.add_parser("audit-stage1-6")
+    sub.add_parser("merge-stage2-validated")
+    sub.add_parser("validate-stage2-outputs")
+    sub.add_parser("audit-stage2-1")
     sub.add_parser("summary")
 
     args = parser.parse_args(argv)
@@ -531,6 +642,41 @@ def main(argv: list[str] | None = None) -> int:
             return 1
     elif args.command == "audit-stage1-6":
         write_stage1_6_audit(root)
+    elif args.command == "merge-stage2-validated":
+        merge_stage2_validated(root)
+    elif args.command == "validate-stage2-outputs":
+        result = validate_stage2_outputs(root)
+        report = [
+            "# Stage 2.1 Output Validation",
+            "",
+            f"- stage2_validated_jsonl_count: {result['stage2_validated_jsonl_count']}",
+            f"- stage2_manual_review_count: {result['stage2_manual_review_count']}",
+            f"- stage2_rejected_count: {result['stage2_rejected_count']}",
+            f"- stage2_auxiliary_count: {result['stage2_auxiliary_count']}",
+            f"- stage2_raw_count: {result['stage2_raw_count']}",
+            f"- main_database_validated_count: {result['main_database_validated_count']}",
+            f"- main_database_csv_rows: {result['main_database_csv_rows']}",
+            f"- jsonl_parse_ok: {str(result['jsonl_parse_ok']).lower()}",
+            f"- main_database_merge_ok: {str(result['main_database_merge_ok']).lower()}",
+            f"- activated_sludge_excluded_from_main: {str(result['activated_sludge_excluded_from_main']).lower()}",
+            f"- wastewater_treatment_excluded_from_main: {str(result['wastewater_treatment_excluded_from_main']).lower()}",
+            f"- confirmed_product_count: {result['confirmed_product_count']}",
+            f"- tentative_product_count: {result['tentative_product_count']}",
+            f"- validation_ok: {str(result['validation_ok']).lower()}",
+            f"- stage2_2_ready_or_not: {result['stage2_2_ready_or_not']}",
+            "",
+            "## Errors",
+            "",
+            *(f"- {error}" for error in result["errors"]),
+            "",
+        ]
+        (root / "reports" / "stage2_1_output_validation.md").write_text("\n".join(report), encoding="utf-8")
+        if not result["ok"]:
+            return 1
+    elif args.command == "audit-stage2-1":
+        result = write_stage2_1_audit(root)
+        if not result["ok"]:
+            return 1
     elif args.command == "summary":
         write_stage1_summary(root)
     return 0
