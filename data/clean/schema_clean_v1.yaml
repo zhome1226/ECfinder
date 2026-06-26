@@ -1,0 +1,29 @@
+version: clean_v1
+record_required_fields:
+  - record_id
+  - source_id
+  - source_type
+  - doi
+  - title
+  - year
+  - journal
+  - parent_compound.name
+  - product_compound.name
+  - transformation.reaction_type
+  - conditions.setting_type
+  - evidence.identification_confidence
+  - evidence_quote
+  - review.evidence_tier
+  - provenance.stage
+allowed_evidence_tiers:
+  - confirmed_product
+  - probable_product
+  - tentative_product
+excluded_from_clean_main:
+  - activated_sludge
+  - wastewater_treatment
+  - WWTP
+  - engineered_biological_treatment
+  - engineered_chemical_treatment
+jsonl_rule: one complete JSON object per line
+csv_rule: csv.DictWriter with header
