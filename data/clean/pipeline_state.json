@@ -1,0 +1,35 @@
+{
+  "active_profile": "clean_validation",
+  "counters": {
+    "chunks_created": 0,
+    "records_auxiliary": 0,
+    "records_extracted": 0,
+    "records_manual_review": 0,
+    "records_rejected": 0,
+    "records_validated": 9,
+    "sources_discovered": 3,
+    "sources_downloaded": 3,
+    "sources_parsed": 3,
+    "sources_screened": 3
+  },
+  "current_step": "write_reports",
+  "failure": {
+    "error_file": "",
+    "failed_step": "",
+    "reason": ""
+  },
+  "gates": {
+    "clean_database_integrity": "passed",
+    "jsonl_integrity": "passed",
+    "natural_environment_boundary": "passed",
+    "preflight": "passed",
+    "report_consistency": "passed",
+    "stage_readiness": "passed"
+  },
+  "last_successful_step": "write_reports",
+  "pipeline_version": "stage2_2b_v1",
+  "run_id": "run_20260626T061759Z_c4079c18",
+  "started_at": "2026-06-26T06:17:59Z",
+  "status": "completed",
+  "updated_at": "2026-06-26T06:17:59Z"
+}

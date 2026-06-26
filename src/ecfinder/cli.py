@@ -17,6 +17,8 @@ from ecfinder.extract.llm_extractor import extract_from_chunks_stub
 from ecfinder.parse.chunker import chunk_parsed_sections
 from ecfinder.parse.html_parser import parse_html
 from ecfinder.parse.pdf_parser import parse_pdf
+from ecfinder.pipeline.orchestrator import pipeline_status
+from ecfinder.pipeline.orchestrator import run_pipeline
 from ecfinder.review.export_validated import ENGINEERED_TERMS
 from ecfinder.review.export_validated import export_validated
 from ecfinder.review.export_validated import merge_stage2_validated
@@ -592,6 +594,11 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("merge-stage2-validated")
     sub.add_parser("validate-stage2-outputs")
     sub.add_parser("audit-stage2-1")
+    targeted = sub.add_parser("pipeline-run-targeted")
+    targeted.add_argument("--max-sources", type=int, default=10)
+    sub.add_parser("pipeline-preflight")
+    sub.add_parser("pipeline-validate-clean")
+    sub.add_parser("pipeline-status")
     sub.add_parser("summary")
 
     args = parser.parse_args(argv)
@@ -711,6 +718,32 @@ def main(argv: list[str] | None = None) -> int:
         result = write_stage2_1_audit(root)
         if not result["ok"]:
             return 1
+    elif args.command == "pipeline-preflight":
+        result = run_pipeline(root, profile="preflight_only")
+        if not result["ok"]:
+            return 1
+    elif args.command == "pipeline-validate-clean":
+        result = run_pipeline(root, profile="clean_validation")
+        if not result["ok"]:
+            return 1
+    elif args.command == "pipeline-run-targeted":
+        result = run_pipeline(root, profile="targeted_followup", max_sources=args.max_sources)
+        if not result["ok"]:
+            return 1
+    elif args.command == "pipeline-status":
+        status = pipeline_status(root)
+        state = status["state"]
+        counts = status["counts"]
+        print(f"pipeline_version: {state.get('pipeline_version')}")
+        print(f"run_id: {state.get('run_id')}")
+        print(f"status: {state.get('status')}")
+        print(f"current_step: {state.get('current_step')}")
+        print(f"last_successful_step: {state.get('last_successful_step')}")
+        print(f"active_profile: {state.get('active_profile')}")
+        for gate, gate_status in sorted((state.get('gates') or {}).items()):
+            print(f"gate.{gate}: {gate_status}")
+        for key, value in sorted(counts.items()):
+            print(f"{key}: {value}")
     elif args.command == "summary":
         write_stage1_summary(root)
     return 0
