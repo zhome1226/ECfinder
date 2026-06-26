@@ -274,23 +274,45 @@ def seed_records() -> list[dict]:
 
 
 def source_records(records: list[dict]) -> list[dict]:
-    grouped: dict[str, list[str]] = {}
+    existing_sources = {
+        source.get("source_id"): source
+        for source in read_jsonl(CLEAN_DIR / "stage2_2_sources.jsonl")
+        if source.get("source_id")
+    }
+    grouped: dict[str, list[dict]] = {}
     for record in records:
-        grouped.setdefault(record["source_id"], []).append(record["record_id"])
-    return [
-        {
-            "source_id": SOURCE_ID,
-            "source_type": "primary_study",
-            "doi": SOURCE_DOI,
-            "title": SOURCE_TITLE,
-            "year": 2018,
-            "journal": "Environmental Science & Technology Letters",
-            "query_family": "C",
-            "record_ids": grouped.get(SOURCE_ID, []),
-            "source_status": "validated_seed_source",
-            "notes": "Initial clean-database source containing 4 environmental-solids microcosm PFAS transformation records.",
+        grouped.setdefault(record["source_id"], []).append(record)
+
+    sources = []
+    for source_id, source_records_for_id in sorted(grouped.items()):
+        first = source_records_for_id[0]
+        base = existing_sources.get(source_id, {})
+        if source_id == SOURCE_ID:
+            base = {
+                "source_id": SOURCE_ID,
+                "source_type": "primary_study",
+                "doi": SOURCE_DOI,
+                "title": SOURCE_TITLE,
+                "year": 2018,
+                "journal": "Environmental Science & Technology Letters",
+                "query_family": "C",
+                "source_status": "validated_seed_source",
+                "notes": "Initial clean-database source containing 4 environmental-solids microcosm PFAS transformation records.",
+            }
+        source = {
+            "source_id": source_id,
+            "source_type": base.get("source_type") or first.get("source_type") or "primary_study",
+            "doi": base.get("doi") or first.get("doi"),
+            "title": base.get("title") or first.get("title"),
+            "year": base.get("year") or first.get("year"),
+            "journal": base.get("journal") or first.get("journal"),
+            "query_family": base.get("query_family") or first.get("query_family"),
+            "record_ids": [record["record_id"] for record in source_records_for_id],
+            "source_status": base.get("source_status") or "validated_clean_source",
+            "notes": base.get("notes") or "Clean database source generated from validated records.",
         }
-    ]
+        sources.append(source)
+    return sources
 
 
 def merge_by_record_id(existing: list[dict], additions: list[dict]) -> list[dict]:
