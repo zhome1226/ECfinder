@@ -513,7 +513,7 @@ def write_reports(validated: list[dict], manual: list[dict], rejected: list[dict
         "",
         f"- priority_doi_attempts = {len(PRIORITY_DOIS)}",
         f"- priority_doi_full_text_success = {full_text_success}",
-        "- additional_search_candidates = 52",
+        f"- additional_search_candidates = {len(search_results())}",
         f"- screened_sources = {len(screened_sources())}",
         f"- download_success = {full_text_success}",
         f"- parsed_sources = {parsed_sources}",

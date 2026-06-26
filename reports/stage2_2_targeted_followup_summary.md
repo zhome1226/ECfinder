@@ -2,7 +2,7 @@
 
 - priority_doi_attempts = 9
 - priority_doi_full_text_success = 2
-- additional_search_candidates = 52
+- additional_search_candidates = 13
 - screened_sources = 13
 - download_success = 2
 - parsed_sources = 2
