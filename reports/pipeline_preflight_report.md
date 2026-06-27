@@ -1,7 +1,7 @@
 # Pipeline Preflight Report
 
 - pipeline_version = stage2_2b_v1
-- run_id = run_20260626T084252Z_49cd20ff
+- run_id = run_20260627T051843Z_1a26c6e7
 - profile = clean_validation
 - status = completed
 - validation_ok = true

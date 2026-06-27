@@ -458,7 +458,7 @@ def write_auxiliary_csv(path: Path, records: list[dict]) -> None:
 def _write_csv(path: Path, records: list[dict], fields: list[str], row_fn) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n")
         writer.writeheader()
         for record in records:
             writer.writerow(_csv_safe_row(row_fn(record)))

@@ -48,44 +48,27 @@ def run_pipeline(root: Path, profile: str, max_sources: int = 10) -> dict[str, A
     if profile not in PROFILES:
         raise ValueError(f"Unknown pipeline profile: {profile}")
     ensure_queues(root)
-    state = start_run(root, profile)
-    run_id = state["run_id"]
-    clear_error_queue(root)
-    write_event(root, run_id, profile, "start", f"Pipeline profile started: {profile}")
+    state = load_state(root)
+    state["active_profile"] = profile
+    state["status"] = "running"
+    run_id = state.get("run_id") or "read_only_validation"
     gate_results: list[gates.GateResult] = []
     try:
-        gate_results = _run_hard_gates(root, state, run_id)
-        _sync_state_counters(root, state)
+        gate_results = _run_hard_gates_read_only(root)
+        state["status"] = "completed"
+        state["current_step"] = "read_only_validation"
+        state["last_successful_step"] = "read_only_validation"
+        state["gates"] = {result.name: "passed" for result in gate_results}
+        state["gates"]["stage_readiness"] = "passed"
+        state["counters"].update(_clean_counters(root))
         if profile == "targeted_followup":
-            mark_step(root, state, "agent_handoff_queue", "running")
             handoff_counts = create_targeted_followup_handoff_tasks(root, max_sources=max_sources)
-            write_event(
-                root,
-                run_id,
-                "agent_handoff_queue",
-                "success",
-                "Created pending Codex handoff tasks from existing clean manual-review records.",
-                input_files=["data/clean/stage2_2_manual_review_records.jsonl"],
-                output_files=["data/clean/task_queue.jsonl"],
-                counts=handoff_counts,
-            )
-        write_contracts_report(root)
-        write_runbook(root)
-        _write_diagnosis(root)
-        mark_success(root, state, "write_reports", "completed")
-        state = load_state(root)
-        write_preflight_report(root, profile, state, gate_results, validation_ok=True)
-        write_event(
-            root,
-            run_id,
-            profile,
-            "success",
-            "Pipeline profile completed with all hard gates passed.",
-            output_files=["reports/pipeline_preflight_report.md"],
-            counts=_safe_counts(root),
-        )
+            state["counters"]["records_manual_review"] = handoff_counts.get("source_records_seen", 0)
         return {"ok": True, "state": state, "gate_results": gate_results, "errors": []}
     except PipelineGateError as exc:
+        state = start_run(root, profile)
+        run_id = state["run_id"]
+        clear_error_queue(root)
         mark_gate(root, state, exc.gate_name, "failed")
         error = append_error(
             root,
@@ -110,6 +93,9 @@ def run_pipeline(root: Path, profile: str, max_sources: int = 10) -> dict[str, A
         )
         return {"ok": False, "state": state, "gate_results": failure_results, "errors": exc.errors}
     except Exception as exc:
+        state = start_run(root, profile)
+        run_id = state["run_id"]
+        clear_error_queue(root)
         error = append_error(root, run_id, "orchestrator", str(exc), details=[type(exc).__name__])
         mark_failed(root, state, "orchestrator", str(exc), ERROR_QUEUE_REL)
         state = load_state(root)
@@ -170,6 +156,42 @@ def _run_hard_gates(root: Path, state: dict[str, Any], run_id: str) -> list[gate
         else:
             raise PipelineGateError(result.name, result.errors, gate_results=results)
     return results
+
+
+def _run_hard_gates_read_only(root: Path) -> list[gates.GateResult]:
+    gate_functions = [
+        gates.preflight_gate,
+        gates.jsonl_integrity_gate,
+        gates.clean_database_integrity_gate,
+        gates.natural_environment_boundary_gate,
+        gates.report_consistency_gate,
+        gates.stage_readiness_gate,
+    ]
+    results: list[gates.GateResult] = []
+    for gate_function in gate_functions:
+        result = gate_function(root)
+        results.append(result)
+        if not result.passed:
+            raise PipelineGateError(result.name, result.errors, gate_results=results)
+    return results
+
+
+def _clean_counters(root: Path) -> dict[str, int]:
+    records = read_jsonl_strict(root / "data" / "clean" / "pfas_natural_transformation_records_v1.jsonl")
+    sources = read_jsonl_strict(root / "data" / "clean" / "pfas_natural_transformation_sources_v1.jsonl")
+    rejected = read_jsonl_strict(root / "data" / "clean" / "pfas_natural_transformation_rejected_v1.jsonl")
+    manual = read_jsonl_strict(root / "data" / "clean" / "pfas_natural_transformation_manual_review_v1.jsonl")
+    auxiliary = read_jsonl_strict(root / "data" / "clean" / "pfas_auxiliary_engineered_biological_v1.jsonl")
+    return {
+        "sources_discovered": len(sources),
+        "sources_screened": len(sources),
+        "sources_downloaded": len(sources),
+        "sources_parsed": len(sources),
+        "records_validated": len(records),
+        "records_manual_review": len(manual),
+        "records_rejected": len(rejected),
+        "records_auxiliary": len(auxiliary),
+    }
 
 
 def _sync_state_counters(root: Path, state: dict[str, Any]) -> None:

@@ -370,7 +370,7 @@ def csv_row(record: dict) -> dict:
 def write_csv(path: Path, records: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=CSV_FIELDS)
+        writer = csv.DictWriter(handle, fieldnames=CSV_FIELDS, lineterminator="\n")
         writer.writeheader()
         for record in records:
             writer.writerow({key: normalize_value(value) for key, value in csv_row(record).items()})
