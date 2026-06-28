@@ -1,0 +1,32 @@
+name: ECfinder CI
+
+on:
+  push:
+    branches: [PFASfinder]
+  pull_request:
+    branches: [PFASfinder]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install -e .
+          pip install pytest
+      - name: Verify committed text integrity
+        run: python scripts/verify_committed_text_integrity.py
+      - name: Compile Python
+        run: python -m py_compile $(find src scripts tests -name "*.py")
+      - name: Run tests
+        run: pytest -q
+      - name: Run pipeline preflight
+        run: python -m ecfinder.cli pipeline-preflight
+      - name: Run pipeline clean validation
+        run: python -m ecfinder.cli pipeline-validate-clean
