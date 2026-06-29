@@ -1,0 +1,12 @@
+{
+  "decision": "include_for_full_text_attempt",
+  "doi": "10.1016/j.envpol.2016.01.069",
+  "forbidden_boundary_hits": [],
+  "natural_environment_keyword_hit": true,
+  "pfas_keyword_hit": true,
+  "reason": "Metadata suggests PFAS transformation evidence; full text or cached text is needed.",
+  "screened_at": "2026-06-29T01:29:03Z",
+  "source_id": "stage2_3_src_003",
+  "title": "Aerobic biotransformation of polyfluoroalkyl phosphate esters (PAPs) in soil",
+  "transformation_keyword_hit": true
+}

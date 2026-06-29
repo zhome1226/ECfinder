@@ -1,0 +1,12 @@
+{
+  "decision": "include_for_full_text_attempt",
+  "doi": "10.1016/j.watres.2023.120941",
+  "forbidden_boundary_hits": [],
+  "natural_environment_keyword_hit": true,
+  "pfas_keyword_hit": true,
+  "reason": "Metadata suggests PFAS transformation evidence; full text or cached text is needed.",
+  "screened_at": "2026-06-29T01:28:58Z",
+  "source_id": "stage2_3_src_002",
+  "title": "Aerobic biotransformation of 6:2 fluorotelomer sulfonate in soils from two aqueous film-forming foam (AFFF)-impacted sites",
+  "transformation_keyword_hit": true
+}

@@ -1,0 +1,32 @@
+{
+  "abstract": "",
+  "authors": [
+    "Sandra Mejia Avendaño",
+    "Jinxia Liu"
+  ],
+  "doi": "10.1016/j.chemosphere.2014.09.059",
+  "error": "",
+  "journal": "Chemosphere",
+  "links": [
+    {
+      "URL": "https://api.elsevier.com/content/article/PII:S0045653514011345?httpAccept=text/xml",
+      "content-type": "text/xml",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+    },
+    {
+      "URL": "https://api.elsevier.com/content/article/PII:S0045653514011345?httpAccept=text/plain",
+      "content-type": "text/plain",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+    }
+  ],
+  "metadata_retrieved": true,
+  "provider": "crossref",
+  "publisher": "Elsevier BV",
+  "retrieved_at": "2026-06-29T01:29:15Z",
+  "source_id": "stage2_3_src_005",
+  "title": "Production of PFOS from aerobic soil biotransformation of two perfluoroalkyl sulfonamide derivatives",
+  "url": "https://doi.org/10.1016/j.chemosphere.2014.09.059",
+  "year": 2015
+}

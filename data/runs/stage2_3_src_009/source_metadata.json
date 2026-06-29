@@ -1,0 +1,35 @@
+{
+  "abstract": "",
+  "authors": [
+    "Peng-Fei Yan",
+    "Sheng Dong",
+    "Linda M. Abriola",
+    "Kurt D. Pennell",
+    "Natalie L. Cápiro"
+  ],
+  "doi": "10.1021/acsestwater.5c00033",
+  "error": "",
+  "journal": "ACS ES&amp;T Water",
+  "links": [
+    {
+      "URL": "https://pubs.acs.org/doi/pdf/10.1021/acsestwater.5c00033",
+      "content-type": "application/pdf",
+      "content-version": "vor",
+      "intended-application": "unspecified"
+    },
+    {
+      "URL": "https://pubs.acs.org/doi/pdf/10.1021/acsestwater.5c00033",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+    }
+  ],
+  "metadata_retrieved": true,
+  "provider": "crossref",
+  "publisher": "American Chemical Society (ACS)",
+  "retrieved_at": "2026-06-29T01:29:35Z",
+  "source_id": "stage2_3_src_009",
+  "title": "Biotransformation of Perfluorooctane Sulfonamide (FOSA) and Microbial Community Dynamics in Aerobic Soils",
+  "url": "https://doi.org/10.1021/acsestwater.5c00033",
+  "year": 2025
+}

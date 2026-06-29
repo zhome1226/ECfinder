@@ -1,0 +1,12 @@
+{
+  "decision": "include_for_full_text_attempt",
+  "doi": "10.1021/es0708722",
+  "forbidden_boundary_hits": [],
+  "natural_environment_keyword_hit": true,
+  "pfas_keyword_hit": true,
+  "reason": "Metadata suggests PFAS transformation evidence; full text or cached text is needed.",
+  "screened_at": "2026-06-29T01:29:26Z",
+  "source_id": "stage2_3_src_007",
+  "title": "Biotransformation of 8:2 Fluorotelomer Alcohol in Soil and by Soil Bacteria Isolates",
+  "transformation_keyword_hit": true
+}

@@ -1,0 +1,12 @@
+{
+  "decision": "include_for_full_text_attempt",
+  "doi": "10.1021/acsestwater.5c00033",
+  "forbidden_boundary_hits": [],
+  "natural_environment_keyword_hit": true,
+  "pfas_keyword_hit": true,
+  "reason": "Metadata suggests PFAS transformation evidence; full text or cached text is needed.",
+  "screened_at": "2026-06-29T01:29:35Z",
+  "source_id": "stage2_3_src_009",
+  "title": "Biotransformation of Perfluorooctane Sulfonamide (FOSA) and Microbial Community Dynamics in Aerobic Soils",
+  "transformation_keyword_hit": true
+}

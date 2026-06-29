@@ -1,0 +1,35 @@
+{
+  "attempts": [
+    {
+      "content_type": "text/xml;charset=UTF-8",
+      "error": "",
+      "ok": true,
+      "status": 200,
+      "url": "https://api.elsevier.com/content/article/PII:S0043135423013817?httpAccept=text/xml"
+    },
+    {
+      "content_type": "",
+      "error": "HTTPError: HTTP Error 400: Bad Request",
+      "ok": false,
+      "status": 400,
+      "url": "https://api.elsevier.com/content/article/PII:S0043135423013817?httpAccept=text/plain"
+    },
+    {
+      "content_type": "text/html;charset=UTF-8",
+      "error": "",
+      "ok": true,
+      "status": 200,
+      "url": "https://doi.org/10.1016/j.watres.2023.120941"
+    }
+  ],
+  "checked_at": "2026-06-29T01:29:02Z",
+  "doi": "10.1016/j.watres.2023.120941",
+  "full_text_attempt_saved": false,
+  "full_text_available": false,
+  "full_text_downloaded": false,
+  "full_text_path": "",
+  "full_text_path_attempted": "data\\runs\\stage2_3_src_002\\full_text.html",
+  "reason": "A publisher, DOI, or cache HTML/PDF response was reachable, but automatic parsing found no PFAS-relevant full-text chunks. Treating this source as metadata-only until lawful full-text content is manually confirmed.",
+  "source_id": "stage2_3_src_002",
+  "text_source_mode": "metadata_only"
+}

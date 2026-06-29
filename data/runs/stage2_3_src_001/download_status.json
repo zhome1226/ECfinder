@@ -1,0 +1,33 @@
+{
+  "attempts": [
+    {
+      "content_type": "",
+      "error": "HTTPError: HTTP Error 403: Forbidden",
+      "ok": false,
+      "status": 403,
+      "url": "https://pubs.acs.org/doi/pdf/10.1021/acs.estlett.8b00148"
+    },
+    {
+      "content_type": "",
+      "error": "HTTPError: HTTP Error 403: Forbidden",
+      "ok": false,
+      "status": 403,
+      "url": "https://doi.org/10.1021/acs.estlett.8b00148"
+    },
+    {
+      "content_type": "",
+      "error": "HTTPError: HTTP Error 403: Forbidden",
+      "ok": false,
+      "status": 403,
+      "url": "https://pubs.acs.org/doi/full/10.1021/acs.estlett.8b00148"
+    }
+  ],
+  "checked_at": "2026-06-29T01:28:56Z",
+  "doi": "10.1021/acs.estlett.8b00148",
+  "full_text_available": true,
+  "full_text_downloaded": false,
+  "full_text_path": "data\\raw\\html\\stage2_b7aa88c721a46f27.html",
+  "reason": "Publisher download was not available in this run; using existing local raw HTML cache.",
+  "source_id": "stage2_3_src_001",
+  "text_source_mode": "local_cached_html"
+}

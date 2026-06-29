@@ -902,12 +902,21 @@ def run(args: argparse.Namespace) -> int:
 
     chunks = parse_chunks(download_status, source_id, doi, title)
     if not chunks and download_status.get("full_text_available"):
+        attempted_path = download_status.get("full_text_path", "")
+        if attempted_path:
+            attempted_full_path = ROOT / attempted_path
+            try:
+                if attempted_full_path.exists() and attempted_full_path.parent == run_dir:
+                    attempted_full_path.unlink()
+            except OSError:
+                pass
         download_status = {
             **download_status,
             "full_text_available": False,
             "full_text_downloaded": False,
             "text_source_mode": "metadata_only",
-            "full_text_path_attempted": download_status.get("full_text_path", ""),
+            "full_text_path_attempted": attempted_path,
+            "full_text_attempt_saved": False,
             "full_text_path": "",
             "reason": (
                 "A publisher, DOI, or cache HTML/PDF response was reachable, but automatic parsing found no "

@@ -1,0 +1,12 @@
+{
+  "decision": "include_for_full_text_attempt",
+  "doi": "10.1021/acs.est.4c06471",
+  "forbidden_boundary_hits": [],
+  "natural_environment_keyword_hit": true,
+  "pfas_keyword_hit": true,
+  "reason": "Metadata suggests PFAS transformation evidence; full text or cached text is needed.",
+  "screened_at": "2026-06-29T01:29:31Z",
+  "source_id": "stage2_3_src_008",
+  "title": "Nexus of Soil Microbiomes, Genes, Classes of Carbon Substrates, and Biotransformation of Fluorotelomer-Based Precursors",
+  "transformation_keyword_hit": true
+}

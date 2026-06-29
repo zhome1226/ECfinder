@@ -1,0 +1,12 @@
+{
+  "decision": "include_for_full_text_attempt",
+  "doi": "10.1021/acs.est.2c01867",
+  "forbidden_boundary_hits": [],
+  "natural_environment_keyword_hit": true,
+  "pfas_keyword_hit": true,
+  "reason": "Metadata suggests PFAS transformation evidence; full text or cached text is needed.",
+  "screened_at": "2026-06-29T01:29:39Z",
+  "source_id": "stage2_3_src_010",
+  "title": "Fate and Transformation of 6:2 Fluorotelomer Sulfonic Acid Affected by Plant, Nutrient, Bioaugmentation, and Soil Microbiome Interactions",
+  "transformation_keyword_hit": true
+}

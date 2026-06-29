@@ -1,0 +1,12 @@
+{
+  "decision": "include_for_full_text_attempt",
+  "doi": "10.1021/acs.estlett.8b00148",
+  "forbidden_boundary_hits": [],
+  "natural_environment_keyword_hit": false,
+  "pfas_keyword_hit": true,
+  "reason": "Metadata suggests PFAS transformation evidence; full text or cached text is needed.",
+  "screened_at": "2026-06-29T01:28:53Z",
+  "source_id": "stage2_3_src_001",
+  "title": "Biotransformation of AFFF Component 6:2 Fluorotelomer Thioether Amido Sulfonate Generates 6:2 Fluorotelomer Thioether Carboxylate under Sulfate-Reducing Conditions",
+  "transformation_keyword_hit": true
+}
