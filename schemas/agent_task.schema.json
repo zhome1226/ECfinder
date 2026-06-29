@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AgentTask",
+  "type": "object",
+  "required": ["task_id", "task_type", "agent", "source_id", "input_refs", "prompt_refs", "schema_ref", "output_expected", "status", "created_at"],
+  "properties": {
+    "task_id": {"type": "string"},
+    "task_type": {"type": "string"},
+    "agent": {"type": "string"},
+    "source_id": {"type": "string"},
+    "chunk_id": {"type": ["string", "null"]},
+    "input_refs": {"type": "object"},
+    "prompt_refs": {"type": "array", "items": {"type": "string"}},
+    "schema_ref": {"type": "string"},
+    "output_expected": {"type": "string"},
+    "status": {"type": "string"},
+    "created_at": {"type": "string"}
+  },
+  "additionalProperties": true
+}

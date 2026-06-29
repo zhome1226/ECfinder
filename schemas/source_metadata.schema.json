@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SourceMetadata",
+  "type": "object",
+  "required": ["source_id", "doi", "title", "metadata_retrieved"],
+  "properties": {
+    "source_id": {"type": "string"},
+    "doi": {"type": "string"},
+    "title": {"type": "string"},
+    "year": {"type": ["integer", "string", "null"]},
+    "journal": {"type": "string"},
+    "authors": {"type": "array"},
+    "metadata_retrieved": {"type": "boolean"},
+    "provider": {"type": "string"},
+    "retrieved_at": {"type": "string"}
+  },
+  "additionalProperties": true
+}

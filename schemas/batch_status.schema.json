@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BatchStatus",
+  "type": "object",
+  "required": ["source_id", "doi", "run_id", "status", "artifact_refs"],
+  "properties": {
+    "source_id": {"type": "string"},
+    "doi": {"type": "string"},
+    "run_id": {"type": "string"},
+    "status": {"type": "string"},
+    "artifact_refs": {"type": "object"},
+    "counts": {"type": "object"},
+    "failure_reason": {"type": "string"},
+    "next_action": {"type": "string"}
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ReviewDecision",
+  "type": "object",
+  "required": [
+    "record_id",
+    "review_status",
+    "review_confidence",
+    "review_reason",
+    "evidence_tier",
+    "requires_manual_confirmation",
+    "natural_environment_valid",
+    "rejection_reason",
+    "next_action"
+  ],
+  "properties": {
+    "record_id": {"type": "string"},
+    "review_status": {"type": "string"},
+    "review_confidence": {"type": ["number", "null"]},
+    "review_reason": {"type": "string"},
+    "evidence_tier": {"type": "string"},
+    "requires_manual_confirmation": {"type": "boolean"},
+    "natural_environment_valid": {"type": "boolean"},
+    "rejection_reason": {"type": ["string", "null"]},
+    "next_action": {"type": "string"}
+  },
+  "additionalProperties": true
+}

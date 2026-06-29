@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TransformationRecord",
+  "type": "object",
+  "required": [
+    "record_id",
+    "source_id",
+    "doi",
+    "title",
+    "chunk_id",
+    "evidence_quote",
+    "parent_compound",
+    "product_compound",
+    "transformation",
+    "conditions",
+    "evidence",
+    "review",
+    "provenance"
+  ],
+  "properties": {
+    "record_id": {"type": "string"},
+    "source_id": {"type": "string"},
+    "doi": {"type": "string"},
+    "title": {"type": "string"},
+    "year": {"type": ["integer", "string", "null"]},
+    "journal": {"type": "string"},
+    "chunk_id": {"type": "string"},
+    "evidence_location": {"type": "object"},
+    "evidence_quote": {"type": "string"},
+    "parent_compound": {"type": "object"},
+    "product_compound": {"type": "object"},
+    "transformation": {"type": "object"},
+    "conditions": {"type": "object"},
+    "evidence": {"type": "object"},
+    "review": {"type": "object"},
+    "provenance": {"type": "object"}
+  },
+  "additionalProperties": true
+}

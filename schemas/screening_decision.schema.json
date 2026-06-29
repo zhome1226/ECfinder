@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ScreeningDecision",
+  "type": "object",
+  "required": ["source_id", "doi", "decision", "reason"],
+  "properties": {
+    "source_id": {"type": "string"},
+    "doi": {"type": "string"},
+    "title": {"type": "string"},
+    "decision": {"type": "string"},
+    "reason": {"type": "string"},
+    "forbidden_boundary_hits": {"type": "array"}
+  },
+  "additionalProperties": true
+}

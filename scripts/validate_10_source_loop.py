@@ -124,6 +124,24 @@ def summarize_status(status_records: list[dict[str, Any]]) -> dict[str, int | bo
         "failed_sources": sum(1 for record in status_records if record.get("status") == "failed"),
         "codex_tasks_created": len(codex_tasks),
     }
+    cache_stats_path = ROOT / "data" / "state" / "cache_stats.json"
+    if cache_stats_path.exists():
+        cache_stats = json.loads(cache_stats_path.read_text(encoding="utf-8"))
+        for key in [
+            "metadata_cache_hits",
+            "metadata_cache_misses",
+            "screening_cache_hits",
+            "screening_cache_misses",
+            "parse_cache_hits",
+            "parse_cache_misses",
+            "extraction_cache_hits",
+            "extraction_cache_misses",
+            "review_cache_hits",
+            "review_cache_misses",
+            "tasks_created",
+            "tokens_saved_estimate",
+        ]:
+            summary[key] = int(cache_stats.get(key, 0))
     summary["can_scale_to_30_sources"] = (
         total_sources == 10
         and metadata_success >= 8
@@ -137,6 +155,11 @@ def summarize_status(status_records: list[dict[str, Any]]) -> dict[str, int | bo
 
 def validate_run_outputs(status_records: list[dict[str, Any]]) -> None:
     for status in status_records:
+        for forbidden_key in ["stdout", "stderr", "abstract", "text", "evidence_quote"]:
+            if forbidden_key in status:
+                raise ValueError(f"batch status contains long text field: {forbidden_key}")
+        if "artifact_refs" not in status:
+            raise ValueError(f"batch status missing artifact_refs: {status.get('source_id')}")
         run_dir = ROOT / str(status.get("run_dir", ""))
         if not run_dir.exists():
             raise ValueError(f"missing run directory: {run_dir}")

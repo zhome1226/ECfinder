@@ -1,0 +1,18 @@
+{
+  "artifact_index_records": 34,
+  "decision_cache_records": 4,
+  "extraction_cache_hits": 8,
+  "extraction_cache_misses": 2,
+  "metadata_cache_hits": 10,
+  "metadata_cache_misses": 0,
+  "parse_cache_hits": 1,
+  "parse_cache_misses": 9,
+  "review_cache_hits": 8,
+  "review_cache_misses": 2,
+  "screening_cache_hits": 10,
+  "screening_cache_misses": 0,
+  "source_registry_records": 10,
+  "task_registry_records": 9,
+  "tasks_created": 9,
+  "tokens_saved_estimate": 10900
+}
