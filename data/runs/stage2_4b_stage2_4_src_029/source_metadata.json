@@ -1,0 +1,34 @@
+{
+  "abstract": "",
+  "authors": [
+    "Jinxia Liu",
+    "Guowei Zhong",
+    "Wei Li",
+    "Sandra Mejia Avendaño"
+  ],
+  "doi": "10.1016/j.scitotenv.2018.09.214",
+  "error": "",
+  "journal": "Science of The Total Environment",
+  "links": [
+    {
+      "URL": "https://api.elsevier.com/content/article/PII:S0048969718336593?httpAccept=text/xml",
+      "content-type": "text/xml",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+    },
+    {
+      "URL": "https://api.elsevier.com/content/article/PII:S0048969718336593?httpAccept=text/plain",
+      "content-type": "text/plain",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+    }
+  ],
+  "metadata_retrieved": true,
+  "provider": "crossref",
+  "publisher": "Elsevier BV",
+  "retrieved_at": "2026-06-30T00:20:11Z",
+  "source_id": "stage2_4_src_029",
+  "title": "Isomer-specific biotransformation of perfluoroalkyl sulfonamide compounds in aerobic soil",
+  "url": "https://doi.org/10.1016/j.scitotenv.2018.09.214",
+  "year": 2019
+}

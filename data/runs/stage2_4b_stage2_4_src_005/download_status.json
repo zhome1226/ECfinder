@@ -1,0 +1,17 @@
+{
+  "access_method": "user_provided",
+  "checked_at": "2026-06-30T05:22:51Z",
+  "doi": "10.1016/j.chemosphere.2014.09.059",
+  "file_type": "pdf",
+  "full_text_available": false,
+  "full_text_downloaded": false,
+  "full_text_path": "",
+  "fulltext_sha256": "",
+  "license_or_access_note": "Provide only lawfully obtained local full text; raw file is not committed.",
+  "local_fulltext_found": false,
+  "local_path_expected": "",
+  "reason": "No local fulltext provided for this Stage 2.4b target.",
+  "source_id": "stage2_4_src_005",
+  "status": "missing_local_fulltext",
+  "text_source_mode": "metadata_only"
+}

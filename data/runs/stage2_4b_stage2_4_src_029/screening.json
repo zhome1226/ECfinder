@@ -1,0 +1,12 @@
+{
+  "decision": "include_for_full_text_attempt",
+  "doi": "10.1016/j.scitotenv.2018.09.214",
+  "forbidden_boundary_hits": [],
+  "natural_environment_keyword_hit": true,
+  "pfas_keyword_hit": true,
+  "reason": "Metadata suggests PFAS transformation evidence; full text or cached text is needed.",
+  "screened_at": "2026-06-30T00:20:11Z",
+  "source_id": "stage2_4_src_029",
+  "title": "Isomer-specific biotransformation of perfluoroalkyl sulfonamide compounds in aerobic soil",
+  "transformation_keyword_hit": true
+}

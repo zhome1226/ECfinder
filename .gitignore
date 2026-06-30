@@ -6,6 +6,12 @@ data/raw/text/*
 !data/raw/text/.gitkeep
 data/raw/chunks/*
 !data/raw/chunks/.gitkeep
+data/local_fulltext/stage2_4b/pdf/*
+data/local_fulltext/stage2_4b/html/*
+data/local_fulltext/stage2_4b/si/*
+!data/local_fulltext/stage2_4b/pdf/.gitkeep
+!data/local_fulltext/stage2_4b/html/.gitkeep
+!data/local_fulltext/stage2_4b/si/.gitkeep
 *.pdf
 *.tmp
 .env

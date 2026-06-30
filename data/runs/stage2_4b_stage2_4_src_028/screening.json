@@ -1,0 +1,12 @@
+{
+  "decision": "include_for_full_text_attempt",
+  "doi": "10.1016/j.chemosphere.2018.07.157",
+  "forbidden_boundary_hits": [],
+  "natural_environment_keyword_hit": true,
+  "pfas_keyword_hit": true,
+  "reason": "Metadata suggests PFAS transformation evidence; full text or cached text is needed.",
+  "screened_at": "2026-06-30T00:20:07Z",
+  "source_id": "stage2_4_src_028",
+  "title": "Biotransformation of Sulfluramid (N-ethyl perfluorooctane sulfonamide) and dynamics of associated rhizospheric microbial community in microcosms of wetland plants",
+  "transformation_keyword_hit": true
+}

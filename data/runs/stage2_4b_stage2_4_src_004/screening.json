@@ -1,0 +1,12 @@
+{
+  "decision": "include_for_full_text_attempt",
+  "doi": "10.1016/j.chemosphere.2016.03.062",
+  "forbidden_boundary_hits": [],
+  "natural_environment_keyword_hit": true,
+  "pfas_keyword_hit": true,
+  "reason": "Metadata suggests PFAS transformation evidence; full text or cached text is needed.",
+  "screened_at": "2026-06-29T01:29:09Z",
+  "source_id": "stage2_4_src_004",
+  "title": "Biotransformation potential of 6:2 fluorotelomer sulfonate (6:2 FTSA) in aerobic and anaerobic sediment",
+  "transformation_keyword_hit": true
+}

@@ -1,0 +1,23 @@
+{
+  "agent": "ExtractionAgent",
+  "chunk_id": null,
+  "created_at": "2026-06-30T05:22:52Z",
+  "input_refs": {
+    "download_ref": "data/runs/stage2_4b_stage2_4_src_028/download_status.json",
+    "manifest_ref": "data/local_fulltext/stage2_4b/fulltext_manifest.jsonl",
+    "metadata_ref": "data/runs/stage2_4b_stage2_4_src_028/source_metadata.json"
+  },
+  "output_expected": "data/runs/stage2_4b_stage2_4_src_028/chunks.jsonl",
+  "prompt_refs": [
+    "prompts/system/global_agent_policy.md",
+    "prompts/system/natural_environment_boundary.md",
+    "prompts/system/pfas_transformation_extraction.md",
+    "prompts/system/json_output_rules.md"
+  ],
+  "reason": "No local fulltext provided for this Stage 2.4b target.",
+  "schema_ref": "schemas/transformation_record.schema.json",
+  "source_id": "stage2_4_src_028",
+  "status": "pending",
+  "task_id": "stage2_4b_stage2_4_src_028_manual_full_text_check",
+  "task_type": "manual_full_text_check"
+}
