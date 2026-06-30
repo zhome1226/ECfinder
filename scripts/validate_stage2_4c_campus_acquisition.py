@@ -29,6 +29,7 @@ FAILURE_REASONS = {
     "captcha_or_mfa_required",
     "download_button_missing",
     "publisher_access_denied",
+    "zotero_fulltext_not_found",
     "other",
 }
 
@@ -196,6 +197,9 @@ def validate_report_counts(statuses: list[dict[str, Any]]) -> dict[str, Any]:
         "manifest_updated": True,
         "can_scale_to_100_sources": False,
         "reason": "insufficient_campus_fulltext_access" if len(downloaded) < 5 else "fulltext_acquired_waiting_for_extraction_review",
+        "zotero_lookup_attempted": sum(1 for row in statuses if row.get("zotero_lookup_attempted")),
+        "zotero_fulltext_found": sum(1 for row in statuses if row.get("zotero_fulltext_status") == "found"),
+        "zotero_fulltext_not_found": sum(1 for row in statuses if row.get("zotero_fulltext_status") == "not_found"),
     }
     report = parse_report_counts(SUMMARY_PATH)
     for key, value in expected.items():

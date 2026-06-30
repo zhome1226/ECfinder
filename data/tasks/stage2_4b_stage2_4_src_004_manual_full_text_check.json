@@ -1,7 +1,7 @@
 {
   "agent": "ExtractionAgent",
   "chunk_id": null,
-  "created_at": "2026-06-30T07:06:42Z",
+  "created_at": "2026-06-30T08:29:44Z",
   "input_refs": {
     "download_ref": "data/runs/stage2_4b_stage2_4_src_004/download_status.json",
     "manifest_ref": "data/local_fulltext/stage2_4b/fulltext_manifest.jsonl",

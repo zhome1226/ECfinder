@@ -95,6 +95,29 @@ BROWSER_ATTEMPTS = {
     },
 }
 
+ZOTERO_LOOKUP_ATTEMPTS = {
+    "stage2_4_src_002": {
+        "zotero_item_key": "EQYEH74D",
+        "zotero_fulltext_status": "not_found",
+    },
+    "stage2_4_src_003": {
+        "zotero_item_key": "SFEYNLDG",
+        "zotero_fulltext_status": "not_found",
+    },
+    "stage2_4_src_004": {
+        "zotero_item_key": "AK5YAY7Y",
+        "zotero_fulltext_status": "not_found",
+    },
+    "stage2_4_src_005": {
+        "zotero_item_key": "PHNA47MP",
+        "zotero_fulltext_status": "not_found",
+    },
+    "stage2_4_src_007": {
+        "zotero_item_key": "APIFT48L",
+        "zotero_fulltext_status": "not_found",
+    },
+}
+
 
 def git_tracked(path: Path) -> bool:
     result = subprocess.run(
@@ -134,8 +157,12 @@ def build_status_records(manifest_rows: list[dict[str, Any]]) -> list[dict[str, 
     for row in manifest_rows:
         source_id = str(row.get("source_id", ""))
         attempt = BROWSER_ATTEMPTS.get(source_id, {})
+        zotero_attempt = ZOTERO_LOOKUP_ATTEMPTS.get(source_id, {})
         downloaded = local_files_for_source(source_id)
         fulltext_accessible = bool(downloaded)
+        failure_reason = None if fulltext_accessible else attempt.get("failure_reason", "other")
+        if not fulltext_accessible and zotero_attempt.get("zotero_fulltext_status") == "not_found":
+            failure_reason = "zotero_fulltext_not_found"
         records.append(
             {
                 "source_id": source_id,
@@ -148,8 +175,11 @@ def build_status_records(manifest_rows: list[dict[str, Any]]) -> list[dict[str, 
                 "publisher_page_reached": bool(attempt.get("publisher_page_reached", False)),
                 "fulltext_accessible": fulltext_accessible,
                 "downloaded_files": downloaded,
-                "failure_reason": None if fulltext_accessible else attempt.get("failure_reason", "other"),
+                "failure_reason": failure_reason,
                 "next_action": "ingest" if fulltext_accessible else "manual_user_fulltext",
+                "zotero_lookup_attempted": bool(zotero_attempt),
+                "zotero_item_key": zotero_attempt.get("zotero_item_key", ""),
+                "zotero_fulltext_status": zotero_attempt.get("zotero_fulltext_status", ""),
             }
         )
     return records
@@ -230,6 +260,9 @@ def summarize(statuses: list[dict[str, Any]]) -> dict[str, Any]:
         "captcha_or_mfa_required": sum(1 for status in statuses if status.get("failure_reason") == "captcha_or_mfa_required"),
         "access_denied": sum(1 for status in statuses if status.get("failure_reason") == "publisher_access_denied"),
         "download_button_missing": sum(1 for status in statuses if status.get("failure_reason") == "download_button_missing"),
+        "zotero_lookup_attempted": sum(1 for status in statuses if status.get("zotero_lookup_attempted")),
+        "zotero_fulltext_found": sum(1 for status in statuses if status.get("zotero_fulltext_status") == "found"),
+        "zotero_fulltext_not_found": sum(1 for status in statuses if status.get("zotero_fulltext_status") == "not_found"),
         "files_ignored_by_git": raw_files_ignored_by_git(),
         "manifest_updated": True,
         "can_scale_to_100_sources": False,
