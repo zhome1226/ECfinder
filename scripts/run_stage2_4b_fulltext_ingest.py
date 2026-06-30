@@ -283,6 +283,7 @@ def write_record_exports(statuses: list[dict[str, Any]]) -> None:
 
 
 def summarize(statuses: list[dict[str, Any]], tasks: list[dict[str, Any]]) -> dict[str, Any]:
+    manifest_rows = read_jsonl(MANIFEST_PATH)
     local_found = sum(1 for status in statuses if status.get("local_fulltext_found"))
     validated = read_jsonl(VALIDATED_PATH)
     source_count_with_validated = len({record.get("source_id") for record in validated if record.get("source_id")})
@@ -290,7 +291,10 @@ def summarize(statuses: list[dict[str, Any]], tasks: list[dict[str, Any]]) -> di
     parsed_sources = sum(1 for status in statuses if int(status.get("parsed_chunks", 0)) > 0)
     if local_found == 0:
         can_scale = False
-        reason = "no local fulltext provided"
+        if any(row.get("status") == "missing_fulltext" and row.get("rescue_attempted") for row in manifest_rows):
+            reason = "insufficient_campus_fulltext_access"
+        else:
+            reason = "no local fulltext provided"
     elif parsed_sources >= 5 and new_validated >= 5 and source_count_with_validated >= 2:
         can_scale = True
         reason = ""

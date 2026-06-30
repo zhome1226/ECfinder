@@ -6,6 +6,6 @@ parsed_sources = 0
 new_validated_records_beyond_stage2_4 = 0
 source_count_with_validated_records = 0
 can_scale_to_100_sources = false
-reason = no local fulltext provided
+reason = insufficient_campus_fulltext_access
 
 Criteria: parsed_sources >= 5, new_validated_records_beyond_stage2_4 >= 5, source_count_with_validated_records >= 2, valid JSONL, and no boundary violations.

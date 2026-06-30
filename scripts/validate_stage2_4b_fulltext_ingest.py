@@ -130,7 +130,9 @@ def validate_manifest() -> list[dict[str, Any]]:
         seen.add(source_id)
         if not record.get("doi") and not record.get("title"):
             raise ValueError(f"manifest target missing DOI/title: {source_id}")
-        if record.get("file_type") not in valid_file_types:
+        if record.get("status") == "missing_fulltext" and record.get("file_type") is None:
+            pass
+        elif record.get("file_type") not in valid_file_types:
             raise ValueError(f"invalid file_type for {source_id}: {record.get('file_type')}")
         if not record.get("status"):
             raise ValueError(f"manifest target missing status: {source_id}")
@@ -264,6 +266,7 @@ def validate_state_refs(statuses: list[dict[str, Any]]) -> None:
 
 
 def summarize(statuses: list[dict[str, Any]], tasks: list[dict[str, Any]]) -> dict[str, Any]:
+    manifest_rows = read_jsonl_strict(MANIFEST_PATH)
     validated = read_jsonl_strict(VALIDATED_PATH)
     manual = read_jsonl_strict(MANUAL_PATH)
     rejected = read_jsonl_strict(REJECTED_PATH)
@@ -272,7 +275,10 @@ def summarize(statuses: list[dict[str, Any]], tasks: list[dict[str, Any]]) -> di
     parsed_sources = sum(1 for status in statuses if int(status.get("parsed_chunks", 0)) > 0)
     if local_found == 0:
         can_scale = False
-        reason = "no local fulltext provided"
+        if any(row.get("status") == "missing_fulltext" and row.get("rescue_attempted") for row in manifest_rows):
+            reason = "insufficient_campus_fulltext_access"
+        else:
+            reason = "no local fulltext provided"
     elif parsed_sources >= 5 and len(validated) >= 5 and source_count_with_validated >= 2:
         can_scale = True
         reason = ""
