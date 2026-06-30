@@ -1,0 +1,33 @@
+{
+  "abstract": "",
+  "authors": [
+    "Hanna Hamid",
+    "Loretta Y. Li",
+    "John R. Grace"
+  ],
+  "doi": "10.1016/j.scitotenv.2020.136547",
+  "error": "",
+  "journal": "Science of The Total Environment",
+  "links": [
+    {
+      "URL": "https://api.elsevier.com/content/article/PII:S0048969720300577?httpAccept=text/xml",
+      "content-type": "text/xml",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+    },
+    {
+      "URL": "https://api.elsevier.com/content/article/PII:S0048969720300577?httpAccept=text/plain",
+      "content-type": "text/plain",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+    }
+  ],
+  "metadata_retrieved": true,
+  "provider": "crossref",
+  "publisher": "Elsevier BV",
+  "retrieved_at": "2026-06-30T00:19:23Z",
+  "source_id": "stage2_4_src_017",
+  "title": "Aerobic biotransformation of fluorotelomer compounds in landfill leachate-sediment",
+  "url": "https://doi.org/10.1016/j.scitotenv.2020.136547",
+  "year": 2020
+}

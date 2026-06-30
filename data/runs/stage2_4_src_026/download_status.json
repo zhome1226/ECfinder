@@ -1,0 +1,33 @@
+{
+  "attempts": [
+    {
+      "content_type": "",
+      "error": "HTTPError: HTTP Error 403: Forbidden",
+      "ok": false,
+      "status": 403,
+      "url": "https://pubs.acs.org/doi/pdf/10.1021/es4018877"
+    },
+    {
+      "content_type": "",
+      "error": "HTTPError: HTTP Error 403: Forbidden",
+      "ok": false,
+      "status": 403,
+      "url": "https://doi.org/10.1021/es4018877"
+    },
+    {
+      "content_type": "",
+      "error": "HTTPError: HTTP Error 403: Forbidden",
+      "ok": false,
+      "status": 403,
+      "url": "https://pubs.acs.org/doi/full/10.1021/es4018877"
+    }
+  ],
+  "checked_at": "2026-06-30T00:20:01Z",
+  "doi": "10.1021/es4018877",
+  "full_text_available": false,
+  "full_text_downloaded": false,
+  "full_text_path": "",
+  "reason": "No lawful downloadable full text or existing local cache was available.",
+  "source_id": "stage2_4_src_026",
+  "text_source_mode": "metadata_only"
+}

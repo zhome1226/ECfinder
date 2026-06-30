@@ -1,0 +1,52 @@
+{
+  "abstract": "<jats:title>Abstract</jats:title> <jats:p>Per- and polyfluoroalkyl substances (PFAS) are environmentally ubiquitous, anthropogenic substances with adverse effects on organisms, which shows the need to study their environmental fate and leaching behavior. In the present soil columns study, the leaching behavior and fate of nontransformable and transformable (precursors) were investigated. Ten nontransformable PFAS in two different soils, two precursors and two field soils, which were already contaminated with a mixture of PFAS, and two uncontaminated controls, were set up for a time span of 2 years. At the end of the study, the molecular balance could not be closed for nontransformable PFAS. This effect was positively correlated to the fluorinated carbon chain length. The precursors, which were both polyfluoroalkyl phosphate diesters (diPAP), had different transformation products and transformation rates, with a higher rate for 6:2 diPAP than 8:2 diPAP. After 2 years, amounts of diPAP were still found in the soil with no significant vertical movement, showing high adsorption to soils. Transformation products were estimated to be simultaneously formed. They were predominantly found in the percolation water; the amounts left in soil were negligible. Up to half of the initial precursor amounts could not be balanced and were considered missing amounts. The results of contaminated field soil experiments showed the challenge to estimate PFAS leaching without knowing all occurring precursors and complex transformation dynamics. For this purpose, it was shown that a broad examination of contaminated soil with different analytical methods can help with qualitative estimations of leaching risks. For a better quantitative estimation, analytical determination of more PFAS and a quantification of the missing amounts are needed. Environ Toxicol Chem 2022;41:2065–2077. © 2022 The Authors. Environmental Toxicology and Chemistry published by Wiley Periodicals LLC on behalf of SETAC.</jats:p>",
+  "authors": [
+    "Eva Weidemann",
+    "René Lämmer",
+    "Thorsten Stahl",
+    "Bernd Göckener",
+    "Mark Bücking",
+    "Jörn Breuer",
+    "Janine Kowalczyk",
+    "Hildegard Just",
+    "Runa S. Boeddinghaus",
+    "Matthias Gassmann"
+  ],
+  "doi": "10.1002/etc.5417",
+  "error": "",
+  "journal": "Environmental Toxicology and Chemistry",
+  "links": [
+    {
+      "URL": "https://onlinelibrary.wiley.com/doi/pdf/10.1002/etc.5417",
+      "content-type": "application/pdf",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+    },
+    {
+      "URL": "https://onlinelibrary.wiley.com/doi/full-xml/10.1002/etc.5417",
+      "content-type": "application/xml",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+    },
+    {
+      "URL": "https://academic.oup.com/etc/article-pdf/41/9/2065/59768803/etc5417.pdf",
+      "content-type": "application/pdf",
+      "content-version": "vor",
+      "intended-application": "syndication"
+    },
+    {
+      "URL": "https://academic.oup.com/etc/article-pdf/41/9/2065/59768803/etc5417.pdf",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+    }
+  ],
+  "metadata_retrieved": true,
+  "provider": "crossref",
+  "publisher": "Oxford University Press (OUP)",
+  "retrieved_at": "2026-06-30T00:19:43Z",
+  "source_id": "stage2_4_src_022",
+  "title": "Leaching and Transformation of Perfluoroalkyl Acids and Polyfluoroalkyl Phosphate Diesters in Unsaturated Soil Column Studies",
+  "url": "https://doi.org/10.1002/etc.5417",
+  "year": 2022
+}

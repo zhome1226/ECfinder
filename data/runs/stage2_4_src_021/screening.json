@@ -1,0 +1,12 @@
+{
+  "decision": "include_for_full_text_attempt",
+  "doi": "10.1021/es403949z",
+  "forbidden_boundary_hits": [],
+  "natural_environment_keyword_hit": true,
+  "pfas_keyword_hit": true,
+  "reason": "Metadata suggests PFAS transformation evidence; full text or cached text is needed.",
+  "screened_at": "2026-06-30T00:19:40Z",
+  "source_id": "stage2_4_src_021",
+  "title": "Fate of Polyfluoroalkyl Phosphate Diesters and Their Metabolites in Biosolids-Applied Soil: Biodegradation and Plant Uptake in Greenhouse and Field Experiments",
+  "transformation_keyword_hit": true
+}

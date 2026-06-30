@@ -242,13 +242,47 @@ def stage2_3_cache_run_dir(source: dict[str, Any], batch_id: str) -> Path | None
     return None
 
 
+def replace_string_values(value: Any, old: str, new: str) -> Any:
+    if isinstance(value, dict):
+        return {key: replace_string_values(child, old, new) for key, child in value.items()}
+    if isinstance(value, list):
+        return [replace_string_values(child, old, new) for child in value]
+    if isinstance(value, str):
+        return value.replace(old, new)
+    return value
+
+
+def mirror_cached_run(cached_dir: Path, target_dir: Path, target_source_id: str) -> None:
+    old_source_id = cached_dir.name
+    target_dir.mkdir(parents=True, exist_ok=True)
+    for name in RUN_REQUIRED_FILES:
+        source_path = cached_dir / name
+        target_path = target_dir / name
+        if not source_path.exists():
+            continue
+        if name.endswith(".json"):
+            payload = replace_string_values(read_json(source_path), old_source_id, target_source_id)
+            write_json(target_path, payload)
+        elif name.endswith(".jsonl"):
+            payload = [replace_string_values(record, old_source_id, target_source_id) for record in read_jsonl(source_path)]
+            write_jsonl(target_path, payload)
+        else:
+            text = source_path.read_text(encoding="utf-8").replace(old_source_id, target_source_id)
+            target_path.write_text(text, encoding="utf-8", newline="\n")
+    optional_task_path = cached_dir / "codex_tasks.jsonl"
+    if optional_task_path.exists():
+        payload = [replace_string_values(record, old_source_id, target_source_id) for record in read_jsonl(optional_task_path)]
+        write_jsonl(target_dir / "codex_tasks.jsonl", payload)
+
+
 def run_dir_for_source(source: dict[str, Any], batch_id: str) -> tuple[Path, bool]:
     direct = RUNS_DIR / str(source["source_id"])
     if (direct / "run_summary.md").exists():
         return direct, True
     cached_stage2_3 = stage2_3_cache_run_dir(source, batch_id)
     if cached_stage2_3 is not None:
-        return cached_stage2_3, True
+        mirror_cached_run(cached_stage2_3, direct, str(source["source_id"]))
+        return direct, True
     return direct, False
 
 
@@ -411,8 +445,6 @@ def create_batch_task(
     output_expected: str,
 ) -> None:
     task_id = f"stage2_4_{source['source_id']}_{task_type}"
-    if task_already_exists(task_id):
-        return
     input_refs = {
         "download_ref": artifact_refs.get("download_ref", ""),
         "metadata_ref": artifact_refs.get("metadata_ref", ""),

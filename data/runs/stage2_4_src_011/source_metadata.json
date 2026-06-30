@@ -1,0 +1,58 @@
+{
+  "abstract": "<jats:title>Abstract</jats:title><jats:p>Fungal degradation of 6:2 fluorotelomer alcohol (6:2 FTOH, C<jats:sub>6</jats:sub>F<jats:sub>13</jats:sub>CH<jats:sub>2</jats:sub>CH<jats:sub>2</jats:sub>OH) by two wood‐decaying fungal strains and six fungal isolates from a site contaminated with per‐ and polyfluoroalkyl substances (PFASs) was investigated. 6:2 FTOH is increasingly being used in FTOH‐based products, and previous reports on the microbial fate of 6:2 FTOH have focused on bacteria and environmental microbial consortia. Prior to this study, one report demonstrated that the 6:2 FTOH biotransformation by the wood‐decaying fungus, <jats:italic>Phanerochaete chrysosporium</jats:italic>, generated more polyfluoroalkyl substances, such as 5:3 acid (F(CF<jats:sub>2</jats:sub>)<jats:sub>5</jats:sub>CH<jats:sub>2</jats:sub>CH<jats:sub>2</jats:sub>COOH), and diverted away from producing the highly stable perfluorocarboxylic acids (PFCAs). Most of the fungi (<jats:italic>Gloeophyllum trabeum</jats:italic> and isolates TW4‐2, TW4‐1, B79, and B76) examined in this study showed similar degradation patterns, further demonstrating that fungi yield more 5:3 acid (up to 51 mol% of initial 6:2 FTOH dosed) relative to other metabolites (up to 12 mol% total PFCAs). However, medium amendments can potentially improve 6:2 FTOH biotransformation rates and product profiles. The six fungal isolates tolerated up to 100 or 1,000 milligrams per liter of perfluorooctanoic acid and perfluorooctane sulfonic acid, and some isolates experienced increased growth with increasing concentrations. This study proposes that fungal pathways must be considered for the biotransformation of potential PFAS precursors, such as 6:2 FTOH, and suggests the basis for selecting proper microorganisms for remediation of fluoroalkyl‐contaminated sites.</jats:p>",
+  "authors": [
+    "Nancy Merino",
+    "Meng Wang",
+    "Rocio Ambrocio",
+    "Kimberly Mak",
+    "Ellen O'Connor",
+    "An Gao",
+    "Elisabeth L. Hawley",
+    "Rula A. Deeb",
+    "Linda Y. Tseng",
+    "Shaily Mahendra"
+  ],
+  "doi": "10.1002/rem.21550",
+  "error": "",
+  "journal": "Remediation Journal",
+  "links": [
+    {
+      "URL": "https://api.wiley.com/onlinelibrary/tdm/v1/articles/10.1002%2Frem.21550",
+      "content-type": "application/pdf",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+    },
+    {
+      "URL": "https://onlinelibrary.wiley.com/doi/pdf/10.1002/rem.21550",
+      "content-type": "application/pdf",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+    },
+    {
+      "URL": "https://onlinelibrary.wiley.com/doi/full-xml/10.1002/rem.21550",
+      "content-type": "application/xml",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+    },
+    {
+      "URL": "https://onlinelibrary.wiley.com/doi/am-pdf/10.1002/rem.21550",
+      "content-type": "application/pdf",
+      "content-version": "am",
+      "intended-application": "syndication"
+    },
+    {
+      "URL": "https://onlinelibrary.wiley.com/doi/pdf/10.1002/rem.21550",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+    }
+  ],
+  "metadata_retrieved": true,
+  "provider": "crossref",
+  "publisher": "Wiley",
+  "retrieved_at": "2026-06-30T00:18:56Z",
+  "source_id": "stage2_4_src_011",
+  "title": "Fungal biotransformation of 6:2 fluorotelomer alcohol",
+  "url": "https://doi.org/10.1002/rem.21550",
+  "year": 2018
+}

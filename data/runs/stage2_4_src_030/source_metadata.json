@@ -1,0 +1,38 @@
+{
+  "abstract": "",
+  "authors": [
+    "Shuyan Zhao",
+    "Tianqi Liu",
+    "Bohui Wang",
+    "Jia Fu",
+    "Tiankun Liang",
+    "Zhe Zhong",
+    "Jingjing Zhan",
+    "Lifen Liu"
+  ],
+  "doi": "10.1016/j.ecoenv.2019.05.062",
+  "error": "",
+  "journal": "Ecotoxicology and Environmental Safety",
+  "links": [
+    {
+      "URL": "https://api.elsevier.com/content/article/PII:S0147651319306037?httpAccept=text/xml",
+      "content-type": "text/xml",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+    },
+    {
+      "URL": "https://api.elsevier.com/content/article/PII:S0147651319306037?httpAccept=text/plain",
+      "content-type": "text/plain",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+    }
+  ],
+  "metadata_retrieved": true,
+  "provider": "crossref",
+  "publisher": "Elsevier BV",
+  "retrieved_at": "2026-06-30T00:20:15Z",
+  "source_id": "stage2_4_src_030",
+  "title": "Accumulation, biodegradation and toxicological effects of N-ethyl perfluorooctane sulfonamidoethanol on the earthworms Eisenia fetida exposed to quartz sands",
+  "url": "https://doi.org/10.1016/j.ecoenv.2019.05.062",
+  "year": 2019
+}

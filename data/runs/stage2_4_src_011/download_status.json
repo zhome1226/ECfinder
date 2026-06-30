@@ -1,0 +1,61 @@
+{
+  "attempts": [
+    {
+      "content_type": "",
+      "error": "HTTPError: HTTP Error 400: No TDM Client Token was found in the request",
+      "ok": false,
+      "status": 400,
+      "url": "https://api.wiley.com/onlinelibrary/tdm/v1/articles/10.1002%2Frem.21550"
+    },
+    {
+      "content_type": "",
+      "error": "HTTPError: HTTP Error 403: Forbidden",
+      "ok": false,
+      "status": 403,
+      "url": "https://onlinelibrary.wiley.com/doi/pdf/10.1002/rem.21550"
+    },
+    {
+      "content_type": "",
+      "error": "HTTPError: HTTP Error 403: Forbidden",
+      "ok": false,
+      "status": 403,
+      "url": "https://onlinelibrary.wiley.com/doi/full-xml/10.1002/rem.21550"
+    },
+    {
+      "content_type": "",
+      "error": "HTTPError: HTTP Error 403: Forbidden",
+      "ok": false,
+      "status": 403,
+      "url": "https://onlinelibrary.wiley.com/doi/am-pdf/10.1002/rem.21550"
+    },
+    {
+      "content_type": "",
+      "error": "HTTPError: HTTP Error 403: Forbidden",
+      "ok": false,
+      "status": 403,
+      "url": "https://doi.org/10.1002/rem.21550"
+    },
+    {
+      "content_type": "",
+      "error": "HTTPError: HTTP Error 403: Forbidden",
+      "ok": false,
+      "status": 403,
+      "url": "https://pubs.acs.org/doi/full/10.1002/rem.21550"
+    },
+    {
+      "content_type": "",
+      "error": "HTTPError: HTTP Error 403: Forbidden",
+      "ok": false,
+      "status": 403,
+      "url": "https://pubs.acs.org/doi/pdf/10.1002/rem.21550"
+    }
+  ],
+  "checked_at": "2026-06-30T00:19:01Z",
+  "doi": "10.1002/rem.21550",
+  "full_text_available": false,
+  "full_text_downloaded": false,
+  "full_text_path": "",
+  "reason": "No lawful downloadable full text or existing local cache was available.",
+  "source_id": "stage2_4_src_011",
+  "text_source_mode": "metadata_only"
+}

@@ -1,0 +1,29 @@
+{
+  "abstract": "",
+  "authors": [
+    "Jinxia Liu",
+    "Linda S. Lee",
+    "Loring F. Nies",
+    "Cindy H. Nakatsu",
+    "Ronald F. Turco"
+  ],
+  "doi": "10.1021/es0708722",
+  "error": "",
+  "journal": "Environmental Science &amp; Technology",
+  "links": [
+    {
+      "URL": "https://pubs.acs.org/doi/pdf/10.1021/es0708722",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+    }
+  ],
+  "metadata_retrieved": true,
+  "provider": "crossref",
+  "publisher": "American Chemical Society (ACS)",
+  "retrieved_at": "2026-06-29T01:29:26Z",
+  "source_id": "stage2_4_src_007",
+  "title": "Biotransformation of 8:2 Fluorotelomer Alcohol in Soil and by Soil Bacteria Isolates",
+  "url": "https://doi.org/10.1021/es0708722",
+  "year": 2007
+}

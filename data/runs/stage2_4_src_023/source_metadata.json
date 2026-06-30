@@ -1,0 +1,30 @@
+{
+  "abstract": "",
+  "authors": [
+    "Katie C. Harding-Marjanovic",
+    "Erika F. Houtz",
+    "Shan Yi",
+    "Jennifer A. Field",
+    "David L. Sedlak",
+    "Lisa Alvarez-Cohen"
+  ],
+  "doi": "10.1021/acs.est.5b01219",
+  "error": "",
+  "journal": "Environmental Science &amp; Technology",
+  "links": [
+    {
+      "URL": "https://pubs.acs.org/doi/pdf/10.1021/acs.est.5b01219",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+    }
+  ],
+  "metadata_retrieved": true,
+  "provider": "crossref",
+  "publisher": "American Chemical Society (ACS)",
+  "retrieved_at": "2026-06-30T00:19:48Z",
+  "source_id": "stage2_4_src_023",
+  "title": "Aerobic Biotransformation of Fluorotelomer Thioether Amido Sulfonate (Lodyne) in AFFF-Amended Microcosms",
+  "url": "https://doi.org/10.1021/acs.est.5b01219",
+  "year": 2015
+}

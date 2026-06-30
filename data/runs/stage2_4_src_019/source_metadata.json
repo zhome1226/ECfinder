@@ -1,0 +1,36 @@
+{
+  "abstract": "",
+  "authors": [
+    "Sheng Dong",
+    "Peng-Fei Yan",
+    "Melissa P. Mezzari",
+    "Linda M. Abriola",
+    "Kurt D. Pennell",
+    "Natalie L. Cápiro"
+  ],
+  "doi": "10.1021/acs.est.4c00942",
+  "error": "",
+  "journal": "Environmental Science &amp; Technology",
+  "links": [
+    {
+      "URL": "https://pubs.acs.org/doi/pdf/10.1021/acs.est.4c00942",
+      "content-type": "application/pdf",
+      "content-version": "vor",
+      "intended-application": "unspecified"
+    },
+    {
+      "URL": "https://pubs.acs.org/doi/pdf/10.1021/acs.est.4c00942",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+    }
+  ],
+  "metadata_retrieved": true,
+  "provider": "crossref",
+  "publisher": "American Chemical Society (ACS)",
+  "retrieved_at": "2026-06-30T00:19:32Z",
+  "source_id": "stage2_4_src_019",
+  "title": "Using Network Analysis and Predictive Functional Analysis to Explore the Fluorotelomer Biotransformation Potential of Soil Microbial Communities",
+  "url": "https://doi.org/10.1021/acs.est.4c00942",
+  "year": 2024
+}

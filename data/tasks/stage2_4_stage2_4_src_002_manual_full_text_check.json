@@ -1,0 +1,22 @@
+{
+  "agent": "ExtractionAgent",
+  "chunk_id": null,
+  "created_at": "2026-06-30T00:21:39Z",
+  "input_refs": {
+    "download_ref": "data/runs/stage2_4_src_002/download_status.json",
+    "metadata_ref": "data/runs/stage2_4_src_002/source_metadata.json"
+  },
+  "output_expected": "data/runs/stage2_4_src_002/chunks.jsonl",
+  "prompt_refs": [
+    "prompts/system/global_agent_policy.md",
+    "prompts/system/natural_environment_boundary.md",
+    "prompts/system/pfas_transformation_extraction.md",
+    "prompts/system/json_output_rules.md"
+  ],
+  "reason": "A publisher, DOI, or cache HTML/PDF response was reachable, but automatic parsing found no PFAS-relevant full-text chunks. Treating this source as metadata-only until lawful full-text content is manually confirmed.",
+  "schema_ref": "schemas/transformation_record.schema.json",
+  "source_id": "stage2_4_src_002",
+  "status": "pending",
+  "task_id": "stage2_4_stage2_4_src_002_manual_full_text_check",
+  "task_type": "manual_full_text_check"
+}

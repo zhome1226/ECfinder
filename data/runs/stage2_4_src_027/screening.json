@@ -1,0 +1,12 @@
+{
+  "decision": "include_for_full_text_attempt",
+  "doi": "10.1016/j.scitotenv.2016.02.180",
+  "forbidden_boundary_hits": [],
+  "natural_environment_keyword_hit": true,
+  "pfas_keyword_hit": true,
+  "reason": "Metadata suggests PFAS transformation evidence; full text or cached text is needed.",
+  "screened_at": "2026-06-30T00:20:02Z",
+  "source_id": "stage2_4_src_027",
+  "title": "Behaviors of N-ethyl perfluorooctane sulfonamide ethanol (N-EtFOSE) in a soil-earthworm system: Transformation and bioaccumulation",
+  "transformation_keyword_hit": true
+}

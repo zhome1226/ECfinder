@@ -1,0 +1,34 @@
+{
+  "abstract": "",
+  "authors": [
+    "Shu Zhang",
+    "Xiaoxia Lu",
+    "Ning Wang",
+    "Robert C. Buck"
+  ],
+  "doi": "10.1016/j.chemosphere.2016.03.062",
+  "error": "",
+  "journal": "Chemosphere",
+  "links": [
+    {
+      "URL": "https://api.elsevier.com/content/article/PII:S0045653516303770?httpAccept=text/xml",
+      "content-type": "text/xml",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+    },
+    {
+      "URL": "https://api.elsevier.com/content/article/PII:S0045653516303770?httpAccept=text/plain",
+      "content-type": "text/plain",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+    }
+  ],
+  "metadata_retrieved": true,
+  "provider": "crossref",
+  "publisher": "Elsevier BV",
+  "retrieved_at": "2026-06-29T01:29:09Z",
+  "source_id": "stage2_4_src_004",
+  "title": "Biotransformation potential of 6:2 fluorotelomer sulfonate (6:2 FTSA) in aerobic and anaerobic sediment",
+  "url": "https://doi.org/10.1016/j.chemosphere.2016.03.062",
+  "year": 2016
+}

@@ -1,0 +1,36 @@
+{
+  "abstract": "",
+  "authors": [
+    "Shan Yi",
+    "Katie C. Harding-Marjanovic",
+    "Erika F. Houtz",
+    "Ying Gao",
+    "Jennifer E. Lawrence",
+    "Rita V. Nichiporuk",
+    "Anthony T. Iavarone",
+    "Wei-Qin Zhuang",
+    "Martin Hansen",
+    "Jennifer A. Field",
+    "David L. Sedlak",
+    "Lisa Alvarez-Cohen"
+  ],
+  "doi": "10.1021/acs.estlett.8b00148",
+  "error": "",
+  "journal": "Environmental Science &amp; Technology Letters",
+  "links": [
+    {
+      "URL": "https://pubs.acs.org/doi/pdf/10.1021/acs.estlett.8b00148",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+    }
+  ],
+  "metadata_retrieved": true,
+  "provider": "crossref",
+  "publisher": "American Chemical Society (ACS)",
+  "retrieved_at": "2026-06-29T01:28:53Z",
+  "source_id": "stage2_4_src_001",
+  "title": "Biotransformation of AFFF Component 6:2 Fluorotelomer Thioether Amido Sulfonate Generates 6:2 Fluorotelomer Thioether Carboxylate under Sulfate-Reducing Conditions",
+  "url": "https://doi.org/10.1021/acs.estlett.8b00148",
+  "year": 2018
+}

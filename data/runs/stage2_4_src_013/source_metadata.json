@@ -1,0 +1,36 @@
+{
+  "abstract": "",
+  "authors": [
+    "Lijie Zhao",
+    "Patrick W. Folsom",
+    "Barry W. Wolstenholme",
+    "Hongwen Sun",
+    "Ning Wang",
+    "Robert C. Buck"
+  ],
+  "doi": "10.1016/j.chemosphere.2012.06.035",
+  "error": "",
+  "journal": "Chemosphere",
+  "links": [
+    {
+      "URL": "https://api.elsevier.com/content/article/PII:S0045653512008429?httpAccept=text/xml",
+      "content-type": "text/xml",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+    },
+    {
+      "URL": "https://api.elsevier.com/content/article/PII:S0045653512008429?httpAccept=text/plain",
+      "content-type": "text/plain",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+    }
+  ],
+  "metadata_retrieved": true,
+  "provider": "crossref",
+  "publisher": "Elsevier BV",
+  "retrieved_at": "2026-06-30T00:19:05Z",
+  "source_id": "stage2_4_src_013",
+  "title": "6:2 Fluorotelomer alcohol biotransformation in an aerobic river sediment system",
+  "url": "https://doi.org/10.1016/j.chemosphere.2012.06.035",
+  "year": 2013
+}

@@ -1,0 +1,12 @@
+{
+  "decision": "include_for_full_text_attempt",
+  "doi": "10.1016/j.ecoenv.2019.05.062",
+  "forbidden_boundary_hits": [],
+  "natural_environment_keyword_hit": false,
+  "pfas_keyword_hit": true,
+  "reason": "Metadata suggests PFAS transformation evidence; full text or cached text is needed.",
+  "screened_at": "2026-06-30T00:20:15Z",
+  "source_id": "stage2_4_src_030",
+  "title": "Accumulation, biodegradation and toxicological effects of N-ethyl perfluorooctane sulfonamidoethanol on the earthworms Eisenia fetida exposed to quartz sands",
+  "transformation_keyword_hit": true
+}

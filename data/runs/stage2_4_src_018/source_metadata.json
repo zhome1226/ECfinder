@@ -1,0 +1,38 @@
+{
+  "abstract": "",
+  "authors": [
+    "Bo Fang",
+    "Hao Chen",
+    "Yue Zhou",
+    "Biting Qiao",
+    "Mujtaba Baqar",
+    "Yu Wang",
+    "Yiming Yao",
+    "Hongwen Sun"
+  ],
+  "doi": "10.1016/j.jhazmat.2024.135261",
+  "error": "",
+  "journal": "Journal of Hazardous Materials",
+  "links": [
+    {
+      "URL": "https://api.elsevier.com/content/article/PII:S0304389424018405?httpAccept=text/xml",
+      "content-type": "text/xml",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+    },
+    {
+      "URL": "https://api.elsevier.com/content/article/PII:S0304389424018405?httpAccept=text/plain",
+      "content-type": "text/plain",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+    }
+  ],
+  "metadata_retrieved": true,
+  "provider": "crossref",
+  "publisher": "Elsevier BV",
+  "retrieved_at": "2026-06-30T00:19:28Z",
+  "source_id": "stage2_4_src_018",
+  "title": "Fluorotelomer betaines and sulfonic acid in aerobic wetland soil: Stability, biotransformation, and bacterial community response",
+  "url": "https://doi.org/10.1016/j.jhazmat.2024.135261",
+  "year": 2024
+}

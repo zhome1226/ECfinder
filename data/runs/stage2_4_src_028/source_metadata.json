@@ -1,0 +1,37 @@
+{
+  "abstract": "",
+  "authors": [
+    "Tingru Yin",
+    "Shu Harn Te",
+    "Martin Reinhard",
+    "Yi Yang",
+    "Huiting Chen",
+    "Yiliang He",
+    "Karina Yew-Hoong Gin"
+  ],
+  "doi": "10.1016/j.chemosphere.2018.07.157",
+  "error": "",
+  "journal": "Chemosphere",
+  "links": [
+    {
+      "URL": "https://api.elsevier.com/content/article/PII:S004565351831422X?httpAccept=text/xml",
+      "content-type": "text/xml",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+    },
+    {
+      "URL": "https://api.elsevier.com/content/article/PII:S004565351831422X?httpAccept=text/plain",
+      "content-type": "text/plain",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+    }
+  ],
+  "metadata_retrieved": true,
+  "provider": "crossref",
+  "publisher": "Elsevier BV",
+  "retrieved_at": "2026-06-30T00:20:07Z",
+  "source_id": "stage2_4_src_028",
+  "title": "Biotransformation of Sulfluramid (N-ethyl perfluorooctane sulfonamide) and dynamics of associated rhizospheric microbial community in microcosms of wetland plants",
+  "url": "https://doi.org/10.1016/j.chemosphere.2018.07.157",
+  "year": 2018
+}

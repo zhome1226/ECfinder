@@ -1,0 +1,38 @@
+{
+  "abstract": "<jats:title>Abstract</jats:title> <jats:p>Fluorotelomer carboxylic acids (FTCAs) and the corresponding unsaturated acids (FTUCAs) are known intermediates in the biodegradation of industrially produced fluorotelomer alcohols (FTOHs) to environmentally persistent perfluorinated carboxylic acids (PFCAs). The FTCAs and FTUCAs are of concern for their toxicity, reactivity, and unknown disposition in the environment. The fate of these compounds was investigated in a simple sediment–water microcosm system. Microcosms were spiked with 8:2 FTCA, 10:2 FTCA, 8:2 FTUCA, or 10:2 FTUCA, after which sediment and water samples were collected over time and analyzed by liquid chromatography–tandem mass spectrometry (LC/MS/MS). The FTCAs and FTUCAs investigated in the present study were observed to degrade rapidly, and sorption of these analytes to sediment was found to be greater for the 10:2 telomer acids compared with the corresponding 8:2 telomer acids. Identifiable degradation products of FTCAs and FTUCAs were observed; however, an overall molar balance could not be achieved. The observed reactivity and lability of these analytes may contribute to the low levels of FTCAs detected in environmental samples. Environ. Toxicol. Chem. 2010; 29:1689–1695. © 2010 SETAC</jats:p>",
+  "authors": [
+    "Anne L. Myers",
+    "Scott A. Mabury"
+  ],
+  "doi": "10.1002/etc.211",
+  "error": "",
+  "journal": "Environmental Toxicology and Chemistry",
+  "links": [
+    {
+      "URL": "https://api.wiley.com/onlinelibrary/tdm/v1/articles/10.1002%2Fetc.211",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+    },
+    {
+      "URL": "https://academic.oup.com/etc/article-pdf/29/8/1689/59856962/211.pdf",
+      "content-type": "application/pdf",
+      "content-version": "vor",
+      "intended-application": "syndication"
+    },
+    {
+      "URL": "https://academic.oup.com/etc/article-pdf/29/8/1689/59856962/211.pdf",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+    }
+  ],
+  "metadata_retrieved": true,
+  "provider": "crossref",
+  "publisher": "Oxford University Press (OUP)",
+  "retrieved_at": "2026-06-30T00:19:18Z",
+  "source_id": "stage2_4_src_016",
+  "title": "Fate of fluorotelomer acids in a soil–water microcosm",
+  "url": "https://doi.org/10.1002/etc.211",
+  "year": 2010
+}

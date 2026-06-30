@@ -1,0 +1,35 @@
+{
+  "attempts": [
+    {
+      "content_type": "text/xml;charset=UTF-8",
+      "error": "",
+      "ok": true,
+      "status": 200,
+      "url": "https://api.elsevier.com/content/article/PII:S0045653514011345?httpAccept=text/xml"
+    },
+    {
+      "content_type": "",
+      "error": "HTTPError: HTTP Error 400: Bad Request",
+      "ok": false,
+      "status": 400,
+      "url": "https://api.elsevier.com/content/article/PII:S0045653514011345?httpAccept=text/plain"
+    },
+    {
+      "content_type": "text/html;charset=UTF-8",
+      "error": "",
+      "ok": true,
+      "status": 200,
+      "url": "https://doi.org/10.1016/j.chemosphere.2014.09.059"
+    }
+  ],
+  "checked_at": "2026-06-29T01:29:19Z",
+  "doi": "10.1016/j.chemosphere.2014.09.059",
+  "full_text_attempt_saved": false,
+  "full_text_available": false,
+  "full_text_downloaded": false,
+  "full_text_path": "",
+  "full_text_path_attempted": "data\\runs\\stage2_4_src_005\\full_text.html",
+  "reason": "A publisher, DOI, or cache HTML/PDF response was reachable, but automatic parsing found no PFAS-relevant full-text chunks. Treating this source as metadata-only until lawful full-text content is manually confirmed.",
+  "source_id": "stage2_4_src_005",
+  "text_source_mode": "metadata_only"
+}

@@ -1,0 +1,32 @@
+{
+  "abstract": "",
+  "authors": [
+    "Chen Liu",
+    "Jinxia Liu"
+  ],
+  "doi": "10.1016/j.envpol.2016.01.069",
+  "error": "",
+  "journal": "Environmental Pollution",
+  "links": [
+    {
+      "URL": "https://api.elsevier.com/content/article/PII:S0269749116300707?httpAccept=text/xml",
+      "content-type": "text/xml",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+    },
+    {
+      "URL": "https://api.elsevier.com/content/article/PII:S0269749116300707?httpAccept=text/plain",
+      "content-type": "text/plain",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+    }
+  ],
+  "metadata_retrieved": true,
+  "provider": "crossref",
+  "publisher": "Elsevier BV",
+  "retrieved_at": "2026-06-29T01:29:03Z",
+  "source_id": "stage2_4_src_003",
+  "title": "Aerobic biotransformation of polyfluoroalkyl phosphate esters (PAPs) in soil",
+  "url": "https://doi.org/10.1016/j.envpol.2016.01.069",
+  "year": 2016
+}

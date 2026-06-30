@@ -1,0 +1,12 @@
+{
+  "decision": "manual_review_metadata_only",
+  "doi": "10.1021/es4018877",
+  "forbidden_boundary_hits": [],
+  "natural_environment_keyword_hit": true,
+  "pfas_keyword_hit": true,
+  "reason": "Metadata is insufficient for automatic source inclusion.",
+  "screened_at": "2026-06-30T00:19:59Z",
+  "source_id": "stage2_4_src_026",
+  "title": "Persistence of Perfluoroalkyl Acid Precursors in AFFF-Impacted Groundwater and Soil",
+  "transformation_keyword_hit": false
+}

@@ -1,0 +1,32 @@
+{
+  "abstract": "",
+  "authors": [
+    "Sarah Balgooyen",
+    "Christina K. Remucal"
+  ],
+  "doi": "10.1021/acs.est.2c06600",
+  "error": "",
+  "journal": "Environmental Science &amp; Technology",
+  "links": [
+    {
+      "URL": "https://pubs.acs.org/doi/pdf/10.1021/acs.est.2c06600",
+      "content-type": "application/pdf",
+      "content-version": "vor",
+      "intended-application": "unspecified"
+    },
+    {
+      "URL": "https://pubs.acs.org/doi/pdf/10.1021/acs.est.2c06600",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+    }
+  ],
+  "metadata_retrieved": true,
+  "provider": "crossref",
+  "publisher": "American Chemical Society (ACS)",
+  "retrieved_at": "2026-06-30T00:19:51Z",
+  "source_id": "stage2_4_src_024",
+  "title": "Impacts of Environmental and Engineered Processes on the PFAS Fingerprint of Fluorotelomer-Based AFFF",
+  "url": "https://doi.org/10.1021/acs.est.2c06600",
+  "year": 2022
+}

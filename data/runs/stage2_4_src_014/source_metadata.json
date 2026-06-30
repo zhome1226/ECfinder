@@ -1,0 +1,35 @@
+{
+  "abstract": "",
+  "authors": [
+    "Shu Zhang",
+    "Nancy Merino",
+    "Ning Wang",
+    "Ting Ruan",
+    "Xiaoxia Lu"
+  ],
+  "doi": "10.1016/j.scitotenv.2016.09.214",
+  "error": "",
+  "journal": "Science of The Total Environment",
+  "links": [
+    {
+      "URL": "https://api.elsevier.com/content/article/PII:S0048969716321441?httpAccept=text/xml",
+      "content-type": "text/xml",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+    },
+    {
+      "URL": "https://api.elsevier.com/content/article/PII:S0048969716321441?httpAccept=text/plain",
+      "content-type": "text/plain",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+    }
+  ],
+  "metadata_retrieved": true,
+  "provider": "crossref",
+  "publisher": "Elsevier BV",
+  "retrieved_at": "2026-06-30T00:19:10Z",
+  "source_id": "stage2_4_src_014",
+  "title": "Impact of 6:2 fluorotelomer alcohol aerobic biotransformation on a sediment microbial community",
+  "url": "https://doi.org/10.1016/j.scitotenv.2016.09.214",
+  "year": 2017
+}

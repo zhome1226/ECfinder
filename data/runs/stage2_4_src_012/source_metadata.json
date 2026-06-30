@@ -1,0 +1,33 @@
+{
+  "abstract": "",
+  "authors": [
+    "Ting Ruan",
+    "Bogdan Szostek",
+    "Patrick W. Folsom",
+    "Barry W. Wolstenholme",
+    "Runzeng Liu",
+    "Jiyan Liu",
+    "Guibin Jiang",
+    "Ning Wang",
+    "Robert C. Buck"
+  ],
+  "doi": "10.1021/es4018128",
+  "error": "",
+  "journal": "Environmental Science &amp; Technology",
+  "links": [
+    {
+      "URL": "https://pubs.acs.org/doi/pdf/10.1021/es4018128",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+    }
+  ],
+  "metadata_retrieved": true,
+  "provider": "crossref",
+  "publisher": "American Chemical Society (ACS)",
+  "retrieved_at": "2026-06-30T00:19:02Z",
+  "source_id": "stage2_4_src_012",
+  "title": "Aerobic Soil Biotransformation of 6:2 Fluorotelomer Iodide",
+  "url": "https://doi.org/10.1021/es4018128",
+  "year": 2013
+}

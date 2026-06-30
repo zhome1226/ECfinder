@@ -1,0 +1,12 @@
+{
+  "decision": "include_for_full_text_attempt",
+  "doi": "10.1002/rem.21550",
+  "forbidden_boundary_hits": [],
+  "natural_environment_keyword_hit": false,
+  "pfas_keyword_hit": true,
+  "reason": "Metadata suggests PFAS transformation evidence; full text or cached text is needed.",
+  "screened_at": "2026-06-30T00:18:56Z",
+  "source_id": "stage2_4_src_011",
+  "title": "Fungal biotransformation of 6:2 fluorotelomer alcohol",
+  "transformation_keyword_hit": true
+}

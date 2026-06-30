@@ -1,0 +1,28 @@
+{
+  "abstract": "",
+  "authors": [
+    "Holly Lee",
+    "Alex G. Tevlin",
+    "Scotia A. Mabury",
+    "Scott A. Mabury"
+  ],
+  "doi": "10.1021/es403949z",
+  "error": "",
+  "journal": "Environmental Science &amp; Technology",
+  "links": [
+    {
+      "URL": "https://pubs.acs.org/doi/pdf/10.1021/es403949z",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+    }
+  ],
+  "metadata_retrieved": true,
+  "provider": "crossref",
+  "publisher": "American Chemical Society (ACS)",
+  "retrieved_at": "2026-06-30T00:19:40Z",
+  "source_id": "stage2_4_src_021",
+  "title": "Fate of Polyfluoroalkyl Phosphate Diesters and Their Metabolites in Biosolids-Applied Soil: Biodegradation and Plant Uptake in Greenhouse and Field Experiments",
+  "url": "https://doi.org/10.1021/es403949z",
+  "year": 2013
+}

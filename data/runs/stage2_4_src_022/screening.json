@@ -1,0 +1,12 @@
+{
+  "decision": "include_for_full_text_attempt",
+  "doi": "10.1002/etc.5417",
+  "forbidden_boundary_hits": [],
+  "natural_environment_keyword_hit": true,
+  "pfas_keyword_hit": true,
+  "reason": "Metadata suggests PFAS transformation evidence; full text or cached text is needed.",
+  "screened_at": "2026-06-30T00:19:43Z",
+  "source_id": "stage2_4_src_022",
+  "title": "Leaching and Transformation of Perfluoroalkyl Acids and Polyfluoroalkyl Phosphate Diesters in Unsaturated Soil Column Studies",
+  "transformation_keyword_hit": true
+}

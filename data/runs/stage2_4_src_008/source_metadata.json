@@ -1,0 +1,37 @@
+{
+  "abstract": "",
+  "authors": [
+    "Jinha Kim",
+    "Scott W. Leonard",
+    "Mariann Inga Van Meter",
+    "Mitchell L. Kim-Fu",
+    "Dunping Cao",
+    "Jennifer A. Field",
+    "Kung-Hui Chu"
+  ],
+  "doi": "10.1021/acs.est.4c06471",
+  "error": "",
+  "journal": "Environmental Science &amp; Technology",
+  "links": [
+    {
+      "URL": "https://pubs.acs.org/doi/pdf/10.1021/acs.est.4c06471",
+      "content-type": "application/pdf",
+      "content-version": "vor",
+      "intended-application": "unspecified"
+    },
+    {
+      "URL": "https://pubs.acs.org/doi/pdf/10.1021/acs.est.4c06471",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+    }
+  ],
+  "metadata_retrieved": true,
+  "provider": "crossref",
+  "publisher": "American Chemical Society (ACS)",
+  "retrieved_at": "2026-06-29T01:29:31Z",
+  "source_id": "stage2_4_src_008",
+  "title": "Nexus of Soil Microbiomes, Genes, Classes of Carbon Substrates, and Biotransformation of Fluorotelomer-Based Precursors",
+  "url": "https://doi.org/10.1021/acs.est.4c06471",
+  "year": 2024
+}

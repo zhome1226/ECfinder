@@ -1,0 +1,54 @@
+{
+  "attempts": [
+    {
+      "content_type": "",
+      "error": "HTTPError: HTTP Error 403: Forbidden",
+      "ok": false,
+      "status": 403,
+      "url": "https://onlinelibrary.wiley.com/doi/pdf/10.1002/etc.5417"
+    },
+    {
+      "content_type": "",
+      "error": "HTTPError: HTTP Error 403: Forbidden",
+      "ok": false,
+      "status": 403,
+      "url": "https://onlinelibrary.wiley.com/doi/full-xml/10.1002/etc.5417"
+    },
+    {
+      "content_type": "",
+      "error": "HTTPError: HTTP Error 403: Forbidden",
+      "ok": false,
+      "status": 403,
+      "url": "https://academic.oup.com/etc/article-pdf/41/9/2065/59768803/etc5417.pdf"
+    },
+    {
+      "content_type": "",
+      "error": "HTTPError: HTTP Error 403: Forbidden",
+      "ok": false,
+      "status": 403,
+      "url": "https://doi.org/10.1002/etc.5417"
+    },
+    {
+      "content_type": "",
+      "error": "HTTPError: HTTP Error 403: Forbidden",
+      "ok": false,
+      "status": 403,
+      "url": "https://pubs.acs.org/doi/full/10.1002/etc.5417"
+    },
+    {
+      "content_type": "",
+      "error": "HTTPError: HTTP Error 403: Forbidden",
+      "ok": false,
+      "status": 403,
+      "url": "https://pubs.acs.org/doi/pdf/10.1002/etc.5417"
+    }
+  ],
+  "checked_at": "2026-06-30T00:19:47Z",
+  "doi": "10.1002/etc.5417",
+  "full_text_available": false,
+  "full_text_downloaded": false,
+  "full_text_path": "",
+  "reason": "No lawful downloadable full text or existing local cache was available.",
+  "source_id": "stage2_4_src_022",
+  "text_source_mode": "metadata_only"
+}

@@ -1,0 +1,33 @@
+{
+  "abstract": "",
+  "authors": [
+    "Shih-Hung Yang",
+    "Libo Shan",
+    "Kung-Hui Chu"
+  ],
+  "doi": "10.1021/acs.est.2c01867",
+  "error": "",
+  "journal": "Environmental Science &amp; Technology",
+  "links": [
+    {
+      "URL": "https://pubs.acs.org/doi/pdf/10.1021/acs.est.2c01867",
+      "content-type": "application/pdf",
+      "content-version": "vor",
+      "intended-application": "unspecified"
+    },
+    {
+      "URL": "https://pubs.acs.org/doi/pdf/10.1021/acs.est.2c01867",
+      "content-type": "unspecified",
+      "content-version": "vor",
+      "intended-application": "similarity-checking"
+    }
+  ],
+  "metadata_retrieved": true,
+  "provider": "crossref",
+  "publisher": "American Chemical Society (ACS)",
+  "retrieved_at": "2026-06-29T01:29:39Z",
+  "source_id": "stage2_4_src_010",
+  "title": "Fate and Transformation of 6:2 Fluorotelomer Sulfonic Acid Affected by Plant, Nutrient, Bioaugmentation, and Soil Microbiome Interactions",
+  "url": "https://doi.org/10.1021/acs.est.2c01867",
+  "year": 2022
+}

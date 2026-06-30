@@ -1,0 +1,12 @@
+{
+  "decision": "include_for_full_text_attempt",
+  "doi": "10.1016/j.chemosphere.2010.06.002",
+  "forbidden_boundary_hits": [],
+  "natural_environment_keyword_hit": false,
+  "pfas_keyword_hit": true,
+  "reason": "Metadata suggests PFAS transformation evidence; full text or cached text is needed.",
+  "screened_at": "2026-06-30T00:19:36Z",
+  "source_id": "stage2_4_src_020",
+  "title": "Fluorotelomer ethoxylates: Sources of highly fluorinated environmental contaminants part I: Biotransformation",
+  "transformation_keyword_hit": true
+}

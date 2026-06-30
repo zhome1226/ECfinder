@@ -1,0 +1,32 @@
+{
+  "abstract": "",
+  "authors": [
+    "Tobias Frömel",
+    "Thomas P. Knepper"
+  ],
+  "doi": "10.1016/j.chemosphere.2010.06.002",
+  "error": "",
+  "journal": "Chemosphere",
+  "links": [
+    {
+      "URL": "https://api.elsevier.com/content/article/PII:S0045653510006491?httpAccept=text/xml",
+      "content-type": "text/xml",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+    },
+    {
+      "URL": "https://api.elsevier.com/content/article/PII:S0045653510006491?httpAccept=text/plain",
+      "content-type": "text/plain",
+      "content-version": "vor",
+      "intended-application": "text-mining"
+    }
+  ],
+  "metadata_retrieved": true,
+  "provider": "crossref",
+  "publisher": "Elsevier BV",
+  "retrieved_at": "2026-06-30T00:19:36Z",
+  "source_id": "stage2_4_src_020",
+  "title": "Fluorotelomer ethoxylates: Sources of highly fluorinated environmental contaminants part I: Biotransformation",
+  "url": "https://doi.org/10.1016/j.chemosphere.2010.06.002",
+  "year": 2010
+}

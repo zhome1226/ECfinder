@@ -1,0 +1,47 @@
+{
+  "attempts": [
+    {
+      "content_type": "",
+      "error": "HTTPError: HTTP Error 400: No TDM Client Token was found in the request",
+      "ok": false,
+      "status": 400,
+      "url": "https://api.wiley.com/onlinelibrary/tdm/v1/articles/10.1002%2Fetc.211"
+    },
+    {
+      "content_type": "",
+      "error": "HTTPError: HTTP Error 403: Forbidden",
+      "ok": false,
+      "status": 403,
+      "url": "https://academic.oup.com/etc/article-pdf/29/8/1689/59856962/211.pdf"
+    },
+    {
+      "content_type": "",
+      "error": "HTTPError: HTTP Error 403: Forbidden",
+      "ok": false,
+      "status": 403,
+      "url": "https://doi.org/10.1002/etc.211"
+    },
+    {
+      "content_type": "",
+      "error": "HTTPError: HTTP Error 403: Forbidden",
+      "ok": false,
+      "status": 403,
+      "url": "https://pubs.acs.org/doi/full/10.1002/etc.211"
+    },
+    {
+      "content_type": "",
+      "error": "HTTPError: HTTP Error 403: Forbidden",
+      "ok": false,
+      "status": 403,
+      "url": "https://pubs.acs.org/doi/pdf/10.1002/etc.211"
+    }
+  ],
+  "checked_at": "2026-06-30T00:19:22Z",
+  "doi": "10.1002/etc.211",
+  "full_text_available": false,
+  "full_text_downloaded": false,
+  "full_text_path": "",
+  "reason": "No lawful downloadable full text or existing local cache was available.",
+  "source_id": "stage2_4_src_016",
+  "text_source_mode": "metadata_only"
+}
