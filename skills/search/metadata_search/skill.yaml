@@ -1,0 +1,5 @@
+skill_id: metadata_search_v1
+agent_name: MetadataAgent
+version: 1.0.0
+status: active
+token_policy: refs_only_short_context

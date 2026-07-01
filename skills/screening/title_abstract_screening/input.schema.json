@@ -1,0 +1,1 @@
+{"type":"object","required":["source_id","title"],"properties":{"source_id":{"type":"string"},"doi":{"type":"string"},"title":{"type":"string"},"abstract":{"type":"string"},"year":{"type":["string","integer","null"]},"journal":{"type":"string"},"keywords":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}

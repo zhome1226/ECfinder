@@ -1,0 +1,5 @@
+skill_id: chunk_relevance_filter_v1
+agent_name: ChunkAgent
+version: 1.0.0
+status: active
+token_policy: chunk_metadata_and_short_snippets

@@ -1,0 +1,5 @@
+skill_id: evidence_grounded_review_v1
+agent_name: ReviewAgent
+version: 1.0.0
+status: active
+token_policy: candidate_plus_evidence_snippet

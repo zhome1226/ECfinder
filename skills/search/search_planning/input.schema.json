@@ -1,0 +1,1 @@
+{"type":"object","required":["batch_id","query_family"],"properties":{"batch_id":{"type":"string"},"query_family":{"type":"string"},"seed_refs":{"type":"array","items":{"type":"string"}},"max_sources":{"type":"integer"}},"additionalProperties":true}

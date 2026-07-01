@@ -1,0 +1,1 @@
+{"type":"object","required":["source_id","metadata_ref","status"],"properties":{"source_id":{"type":"string"},"metadata_ref":{"type":"string"},"doi_hash":{"type":"string"},"title_hash":{"type":"string"},"status":{"type":"string"}},"additionalProperties":true}

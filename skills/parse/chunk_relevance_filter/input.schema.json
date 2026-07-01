@@ -1,0 +1,1 @@
+{"type":"object","required":["source_id","chunks_ref"],"properties":{"source_id":{"type":"string"},"chunks_ref":{"type":"string"},"term_policy_ref":{"type":"string"},"max_snippet_chars":{"type":"integer"}},"additionalProperties":true}

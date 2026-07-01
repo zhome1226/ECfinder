@@ -1,0 +1,1 @@
+{"input":{"source_id":"example_src_006","chunks_ref":"data/runs/example/chunks.jsonl","chunk_ids":["chunk_001"]},"output":{"source_id":"example_src_006","candidate_records_ref":"data/runs/example/candidate_records.jsonl","candidate_count":1,"status":"candidates_written"}}

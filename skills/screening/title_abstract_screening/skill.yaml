@@ -1,0 +1,5 @@
+skill_id: title_abstract_screening_v1
+agent_name: TitleAbstractScreeningAgent
+version: 1.0.0
+status: active
+token_policy: title_abstract_only

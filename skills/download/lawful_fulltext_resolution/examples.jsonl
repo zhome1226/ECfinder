@@ -1,0 +1,1 @@
+{"input":{"source_id":"example_src_003","metadata_ref":"data/cache/metadata/example.json","screening_ref":"data/cache/screening/example.json"},"output":{"source_id":"example_src_003","download_ref":"data/runs/example/download_status.json","status":"blocked_external","next_action":"provide_fulltext_or_zotero_attachment"}}

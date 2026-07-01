@@ -1,0 +1,1 @@
+{"input":{"source_id":"example_src_009","chunks_ref":"data/runs/example/chunks.jsonl","max_snippet_chars":500},"output":{"source_id":"example_src_009","selected_chunk_refs":["data/runs/example/chunks.jsonl#chunk_001"],"rejected_chunk_count":9,"status":"filtered"}}

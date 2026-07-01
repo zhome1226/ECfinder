@@ -1,0 +1,1 @@
+{"type":"object","required":["batch_id","mode"],"properties":{"batch_id":{"type":"string"},"mode":{"type":"string"},"until_idle":{"type":"boolean"},"dry_run":{"type":"boolean"}},"additionalProperties":true}

@@ -1,0 +1,1 @@
+{"type":"object","required":["source_id","status"],"properties":{"source_id":{"type":"string"},"status":{"enum":["attachment_synced","attachment_missing","item_missing","manual_mapping_required"]},"manifest_ref":{"type":"string"},"sha256":{"type":"string"},"next_action":{"type":"string"}},"additionalProperties":true}

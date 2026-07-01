@@ -1,0 +1,5 @@
+skill_id: skill_manager_agent_v1
+agent_name: SkillManagerAgent
+version: 1.0.0
+status: active
+token_policy: registry_refs_only

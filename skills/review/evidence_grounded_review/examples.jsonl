@@ -1,0 +1,1 @@
+{"input":{"source_id":"example_src_007","candidate_record_ref":"data/runs/example/candidate_records.jsonl","evidence_chunk_ref":"data/runs/example/chunks.jsonl"},"output":{"record_id":"example_candidate_001","review_status":"validated","evidence_tier":"confirmed_validated","natural_environment_valid":true,"next_action":"database_write"}}

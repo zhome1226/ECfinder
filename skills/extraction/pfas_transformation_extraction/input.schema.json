@@ -1,0 +1,1 @@
+{"type":"object","required":["source_id","chunks_ref"],"properties":{"source_id":{"type":"string"},"metadata_ref":{"type":"string"},"chunks_ref":{"type":"string"},"chunk_ids":{"type":"array","items":{"type":"string"}},"skill_version":{"type":"string"}},"additionalProperties":true}

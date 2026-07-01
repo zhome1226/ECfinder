@@ -1,0 +1,5 @@
+skill_id: search_planning_v1
+agent_name: SearchAgent
+version: 1.0.0
+status: active
+token_policy: query_refs_only

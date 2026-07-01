@@ -1,0 +1,1 @@
+{"input":{"source_id":"example_src_008","reviewed_records_ref":"data/runs/example/reviewed_records.jsonl"},"output":{"source_id":"example_src_008","validated_records_ref":"data/runs/example/validated_records.jsonl","manual_review_ref":"data/runs/example/manual_review_records.jsonl","rejected_records_ref":"data/runs/example/rejected_records.jsonl","status":"database_write_done"}}

@@ -1,0 +1,5 @@
+skill_id: reviewed_record_database_write_v1
+agent_name: DatabaseWriteAgent
+version: 1.0.0
+status: active
+token_policy: reviewed_records_only

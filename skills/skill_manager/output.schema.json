@@ -1,0 +1,1 @@
+{"type":"object","required":["active_skills","skills_missing_contracts","status"],"properties":{"active_skills":{"type":"integer"},"skills_missing_contracts":{"type":"integer"},"status":{"type":"string"},"change_log_ref":{"type":"string"}},"additionalProperties":true}

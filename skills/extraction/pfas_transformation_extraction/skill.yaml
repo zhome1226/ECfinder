@@ -1,0 +1,5 @@
+skill_id: pfas_transformation_extraction_v1
+agent_name: ExtractionAgent
+version: 1.0.0
+status: active
+token_policy: relevant_chunks_only

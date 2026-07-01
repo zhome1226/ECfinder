@@ -1,0 +1,1 @@
+{"type":"object","required":["source_id","candidate_record_ref","evidence_chunk_ref"],"properties":{"source_id":{"type":"string"},"candidate_record_ref":{"type":"string"},"evidence_chunk_ref":{"type":"string"},"skill_version":{"type":"string"}},"additionalProperties":true}

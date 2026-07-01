@@ -1,0 +1,1 @@
+{"type":"object","required":["source_id","download_ref","status"],"properties":{"source_id":{"type":"string"},"download_ref":{"type":"string"},"status":{"enum":["fulltext_found","fulltext_missing","blocked_external"]},"sha256":{"type":"string"},"next_action":{"type":"string"}},"additionalProperties":true}

@@ -1,0 +1,1 @@
+{"type":"object","required":["source_id","reviewed_records_ref"],"properties":{"source_id":{"type":"string"},"reviewed_records_ref":{"type":"string"},"target_database_ref":{"type":"string"}},"additionalProperties":true}

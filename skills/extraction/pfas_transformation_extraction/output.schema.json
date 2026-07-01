@@ -1,0 +1,1 @@
+{"type":"object","required":["source_id","candidate_records_ref","candidate_count","status"],"properties":{"source_id":{"type":"string"},"candidate_records_ref":{"type":"string"},"candidate_count":{"type":"integer"},"status":{"enum":["candidates_written","no_candidates","manual_required"]}},"additionalProperties":true}

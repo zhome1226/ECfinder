@@ -1,0 +1,1 @@
+{"type":"object","required":["batch_id","runnable_tasks","no_runnable_tasks_remain","status"],"properties":{"batch_id":{"type":"string"},"runnable_tasks":{"type":"integer"},"no_runnable_tasks_remain":{"type":"boolean"},"status":{"type":"string"}},"additionalProperties":true}

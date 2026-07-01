@@ -1,0 +1,5 @@
+skill_id: fulltext_parse_chunk_v1
+agent_name: ParseAgent
+version: 1.0.0
+status: active
+token_policy: no_llm_parser

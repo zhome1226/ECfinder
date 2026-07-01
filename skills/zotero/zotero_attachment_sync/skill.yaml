@@ -1,0 +1,5 @@
+skill_id: zotero_attachment_sync_v1
+agent_name: ZoteroAgent
+version: 1.0.0
+status: active
+token_policy: metadata_refs_only

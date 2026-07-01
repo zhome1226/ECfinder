@@ -1,0 +1,1 @@
+{"input":{"source_id":"example_src_005","download_ref":"data/runs/example/download_status.json"},"output":{"source_id":"example_src_005","chunks_ref":"data/runs/example/chunks.jsonl","chunk_count":12,"status":"chunked"}}

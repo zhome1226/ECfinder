@@ -1,0 +1,1 @@
+{"input":{"batch_id":"example_batch","query_family":"pfas_transformation_soil","max_sources":10},"output":{"batch_id":"example_batch","queue_ref":"data/batches/example_queue.jsonl","planned_sources":10,"status":"planned"}}

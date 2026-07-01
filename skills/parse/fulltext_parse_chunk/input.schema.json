@@ -1,0 +1,1 @@
+{"type":"object","required":["source_id","download_ref"],"properties":{"source_id":{"type":"string"},"download_ref":{"type":"string"},"file_type":{"enum":["pdf","html","si"]}},"additionalProperties":true}

@@ -1,0 +1,5 @@
+skill_id: supervisor_agent_v1
+agent_name: SupervisorAgent
+version: 1.0.0
+status: active
+token_policy: task_payload_refs_only

@@ -1,0 +1,1 @@
+{"type":"object","required":["registry_ref"],"properties":{"registry_ref":{"type":"string"},"audit_only":{"type":"boolean"},"proposed_change_ref":{"type":"string"}},"additionalProperties":true}
