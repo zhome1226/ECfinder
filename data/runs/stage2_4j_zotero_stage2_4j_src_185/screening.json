@@ -1,0 +1,7 @@
+{
+  "decision": "include_available_fulltext",
+  "match_tier": "B",
+  "priority": "high",
+  "reason": "Available Zotero attachment selected by Stage 2.4j scope audit.",
+  "source_id": "zotero_stage2_4j_src_185"
+}

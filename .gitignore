@@ -12,6 +12,12 @@ data/local_fulltext/stage2_4b/si/*
 !data/local_fulltext/stage2_4b/pdf/.gitkeep
 !data/local_fulltext/stage2_4b/html/.gitkeep
 !data/local_fulltext/stage2_4b/si/.gitkeep
+data/local_fulltext/stage2_4j/pdf/*
+data/local_fulltext/stage2_4j/html/*
+data/local_fulltext/stage2_4j/si/*
+!data/local_fulltext/stage2_4j/pdf/.gitkeep
+!data/local_fulltext/stage2_4j/html/.gitkeep
+!data/local_fulltext/stage2_4j/si/.gitkeep
 *.pdf
 *.tmp
 .env
