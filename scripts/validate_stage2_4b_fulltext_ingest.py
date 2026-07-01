@@ -27,6 +27,14 @@ REJECTED_PATH = BATCH_DIR / "stage2_4b_rejected_records.jsonl"
 CODEX_TASKS_PATH = BATCH_DIR / "stage2_4b_codex_tasks.jsonl"
 ZOTERO_STATUS_PATH = BATCH_DIR / "stage2_4b_zotero_attachment_status.jsonl"
 SUMMARY_PATH = REPORTS_DIR / "stage2_4b_fulltext_ingest_summary.md"
+COMPLETION_REPORT_PATH = REPORTS_DIR / "stage2_4g_zotero_attachment_completion_targets.md"
+USER_STEPS_PATH = REPORTS_DIR / "stage2_4g_user_zotero_steps.md"
+ZOTERO_WORKFLOW_ROOT = ROOT / "data" / "local_fulltext" / "zotero"
+COMPLETION_CSV_PATH = ZOTERO_WORKFLOW_ROOT / "stage2_4g_zotero_completion_targets.csv"
+COMPLETION_JSONL_PATH = ZOTERO_WORKFLOW_ROOT / "stage2_4g_zotero_completion_targets.jsonl"
+TARGETS_RIS_PATH = ZOTERO_WORKFLOW_ROOT / "stage2_4g_targets.ris"
+TARGETS_BIB_PATH = ZOTERO_WORKFLOW_ROOT / "stage2_4g_targets.bib"
+MAPPING_TEMPLATE_PATH = ZOTERO_WORKFLOW_ROOT / "zotero_mapping_template.jsonl"
 
 SOURCE_REGISTRY_PATH = STATE_DIR / "source_registry.jsonl"
 ARTIFACT_INDEX_PATH = STATE_DIR / "artifact_index.jsonl"
@@ -154,12 +162,25 @@ def validate_zotero_attachment_status(manifest: list[dict[str, Any]]) -> None:
         diagnosis = row.get("diagnosis")
         if diagnosis not in {
             "zotero_attachment_synced",
+            "manual_mapping_synced",
             "zotero_item_missing",
             "zotero_item_without_attachment",
             "zotero_attachment_file_missing",
             "zotero_attachment_unsupported_type",
         }:
             raise ValueError(f"invalid Zotero attachment diagnosis for {source_id}: {diagnosis}")
+        if row.get("recommended_user_action") not in {
+            "ready_for_ingest",
+            "import_target_to_zotero",
+            "run_find_available_pdf_or_manual_attach",
+            "sync_zotero_or_relink_attachment",
+            "attach_pdf_or_html",
+        }:
+            raise ValueError(f"invalid Zotero recommended_user_action for {source_id}: {row.get('recommended_user_action')}")
+        if not isinstance(row.get("attachment_content_types", []), list):
+            raise ValueError(f"Zotero status attachment_content_types must be a list: {source_id}")
+        if not isinstance(row.get("attachment_paths", []), list):
+            raise ValueError(f"Zotero status attachment_paths must be a list: {source_id}")
         if row.get("accepted_attachment_count", 0):
             manifest_row = manifest_by_source[source_id]
             if not manifest_row.get("local_path") or not manifest_row.get("sha256"):
@@ -171,6 +192,60 @@ def validate_zotero_attachment_status(manifest: list[dict[str, Any]]) -> None:
                 raise ValueError(f"Zotero-synced manifest sha mismatch: {source_id}")
         elif manifest_by_source[source_id].get("status") != "missing_fulltext":
             raise ValueError(f"unsynced Zotero source must remain missing_fulltext: {source_id}")
+
+
+def validate_stage2_4g_zotero_workflow_files(manifest: list[dict[str, Any]]) -> None:
+    if not COMPLETION_JSONL_PATH.exists():
+        return
+    source_ids = {str(row.get("source_id", "")) for row in manifest}
+    required_files = [
+        COMPLETION_REPORT_PATH,
+        USER_STEPS_PATH,
+        COMPLETION_CSV_PATH,
+        COMPLETION_JSONL_PATH,
+        TARGETS_RIS_PATH,
+        TARGETS_BIB_PATH,
+        MAPPING_TEMPLATE_PATH,
+    ]
+    for path in required_files:
+        if not path.exists():
+            raise ValueError(f"missing Stage 2.4g Zotero workflow file: {path}")
+    completion_rows = read_jsonl_strict(COMPLETION_JSONL_PATH)
+    if len(completion_rows) != len(manifest):
+        raise ValueError(f"Stage 2.4g completion JSONL count mismatch: {len(completion_rows)}")
+    allowed_actions = {
+        "ready_for_ingest",
+        "run_find_available_pdf",
+        "create_zotero_item",
+        "sync_zotero_storage_or_relink_attachment",
+        "manual_attach_pdf",
+    }
+    for row in completion_rows:
+        source_id = str(row.get("source_id", ""))
+        if source_id not in source_ids:
+            raise ValueError(f"Stage 2.4g completion source not in manifest: {source_id}")
+        if row.get("required_action") not in allowed_actions:
+            raise ValueError(f"invalid Stage 2.4g required_action for {source_id}: {row.get('required_action')}")
+        if row.get("priority") not in {"high", "medium", "low"}:
+            raise ValueError(f"invalid Stage 2.4g priority for {source_id}: {row.get('priority')}")
+    mapping_rows = read_jsonl_strict(MAPPING_TEMPLATE_PATH)
+    if len(mapping_rows) != len(manifest):
+        raise ValueError(f"Zotero mapping template count mismatch: {len(mapping_rows)}")
+    for row in mapping_rows:
+        source_id = str(row.get("source_id", ""))
+        if source_id not in source_ids:
+            raise ValueError(f"mapping template source not in manifest: {source_id}")
+        if row.get("mapping_method") != "manual_user_confirmed":
+            raise ValueError(f"mapping template must use manual_user_confirmed: {source_id}")
+        if row.get("attachment_type") not in {"pdf", "html", "si"}:
+            raise ValueError(f"invalid mapping attachment_type for {source_id}: {row.get('attachment_type')}")
+    ris_text = TARGETS_RIS_PATH.read_text(encoding="utf-8")
+    bib_text = TARGETS_BIB_PATH.read_text(encoding="utf-8")
+    if "ECfinder_stage2_4g" not in ris_text or "ECfinder_stage2_4g" not in bib_text:
+        raise ValueError("RIS/BibTeX target files must include ECfinder_stage2_4g tag")
+    for source_id in source_ids:
+        if source_id not in ris_text or source_id not in bib_text:
+            raise ValueError(f"RIS/BibTeX target files missing source_id: {source_id}")
 
 
 def validate_raw_fulltext_not_committed() -> None:
@@ -309,8 +384,8 @@ def summarize(statuses: list[dict[str, Any]], tasks: list[dict[str, Any]]) -> di
     parsed_sources = sum(1 for status in statuses if int(status.get("parsed_chunks", 0)) > 0)
     if local_found == 0:
         can_scale = False
-        if any(row.get("status") == "missing_fulltext" and row.get("rescue_attempted") for row in manifest_rows):
-            reason = "insufficient_campus_fulltext_access"
+        if any(str(row.get("rescue_failure_reason", "")).startswith("zotero_") for row in manifest_rows):
+            reason = "zotero_items_exist_but_no_fulltext_attachments"
         else:
             reason = "no local fulltext provided"
     elif parsed_sources >= 5 and len(validated) >= 5 and source_count_with_validated >= 2:
@@ -318,7 +393,7 @@ def summarize(statuses: list[dict[str, Any]], tasks: list[dict[str, Any]]) -> di
         reason = ""
     else:
         can_scale = False
-        reason = "insufficient_fulltext_and_no_new_validated_records"
+        reason = "zotero_attachments_synced_waiting_for_extraction_review"
     return {
         "manifest_sources": len(statuses),
         "local_fulltext_found": local_found,
@@ -356,6 +431,7 @@ def validate_summary(summary: dict[str, Any]) -> None:
 def main() -> int:
     manifest = validate_manifest()
     validate_zotero_attachment_status(manifest)
+    validate_stage2_4g_zotero_workflow_files(manifest)
     validate_raw_fulltext_not_committed()
     statuses = read_jsonl_strict(STATUS_PATH)
     if len(statuses) != 12:

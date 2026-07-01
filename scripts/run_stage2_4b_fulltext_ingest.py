@@ -291,8 +291,8 @@ def summarize(statuses: list[dict[str, Any]], tasks: list[dict[str, Any]]) -> di
     parsed_sources = sum(1 for status in statuses if int(status.get("parsed_chunks", 0)) > 0)
     if local_found == 0:
         can_scale = False
-        if any(row.get("status") == "missing_fulltext" and row.get("rescue_attempted") for row in manifest_rows):
-            reason = "insufficient_campus_fulltext_access"
+        if any(str(row.get("rescue_failure_reason", "")).startswith("zotero_") for row in manifest_rows):
+            reason = "zotero_items_exist_but_no_fulltext_attachments"
         else:
             reason = "no local fulltext provided"
     elif parsed_sources >= 5 and new_validated >= 5 and source_count_with_validated >= 2:
@@ -300,7 +300,7 @@ def summarize(statuses: list[dict[str, Any]], tasks: list[dict[str, Any]]) -> di
         reason = ""
     else:
         can_scale = False
-        reason = "insufficient_fulltext_and_no_new_validated_records"
+        reason = "zotero_attachments_synced_waiting_for_extraction_review"
     return {
         "manifest_sources": len(statuses),
         "local_fulltext_found": local_found,

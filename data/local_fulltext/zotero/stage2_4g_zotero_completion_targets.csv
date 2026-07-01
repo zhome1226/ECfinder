@@ -1,0 +1,13 @@
+source_id,doi,title,zotero_item_found,zotero_item_key,attachment_found,required_action,priority
+stage2_4_src_002,10.1016/j.watres.2023.120941,Aerobic biotransformation of 6:2 fluorotelomer sulfonate in soils from two AFFF-impacted sites,True,EQYEH74D,False,run_find_available_pdf,high
+stage2_4_src_003,10.1016/j.envpol.2016.01.069,Aerobic biotransformation of polyfluoroalkyl phosphate esters (PAPs) in soil,True,SFEYNLDG,False,run_find_available_pdf,high
+stage2_4_src_004,10.1016/j.chemosphere.2016.03.062,Biotransformation potential of 6:2 FTSA in aerobic and anaerobic sediment,True,AK5YAY7Y,False,run_find_available_pdf,high
+stage2_4_src_005,10.1016/j.chemosphere.2014.09.059,Production of PFOS from aerobic soil biotransformation of two perfluoroalkyl sulfonamide derivatives,True,PHNA47MP,False,run_find_available_pdf,high
+stage2_4_src_006,10.1016/j.envpol.2017.05.074,Kinetic analysis of aerobic biotransformation pathways of a PFOS precursor in soils,False,,False,create_zotero_item,high
+stage2_4_src_007,10.1021/es0708722,Biotransformation of 8:2 Fluorotelomer Alcohol in Soil and by Soil Bacteria Isolates,True,APIFT48L,False,run_find_available_pdf,high
+stage2_4_src_009,10.1021/acsestwater.5c00033,Biotransformation of Perfluorooctane Sulfonamide (FOSA) and Microbial Community Dynamics in Aerobic Soils,False,,False,create_zotero_item,high
+stage2_4_src_013,10.1016/j.chemosphere.2012.06.035,6:2 Fluorotelomer alcohol biotransformation in an aerobic river sediment system,False,,False,create_zotero_item,high
+stage2_4_src_018,10.1016/j.jhazmat.2024.135261,Fluorotelomer betaines and sulfonic acid in aerobic wetland soil,False,,False,create_zotero_item,high
+stage2_4_src_021,10.1021/es403949z,Fate of Polyfluoroalkyl Phosphate Diesters and Their Metabolites in Biosolids-Applied Soil,False,,False,create_zotero_item,high
+stage2_4_src_028,10.1016/j.chemosphere.2018.07.157,Biotransformation of Sulfluramid in wetland plant microcosms,False,,False,create_zotero_item,high
+stage2_4_src_029,10.1016/j.scitotenv.2018.09.214,Isomer-specific biotransformation of perfluoroalkyl sulfonamide compounds in aerobic soil,False,,False,create_zotero_item,high

@@ -11,6 +11,7 @@ The script is intentionally conservative:
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import shutil
 import sqlite3
@@ -25,15 +26,45 @@ from ecfinder.state.common import read_jsonl, sha256_file, write_jsonl
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCAL_ROOT = ROOT / "data" / "local_fulltext" / "stage2_4b"
+ZOTERO_WORKFLOW_ROOT = ROOT / "data" / "local_fulltext" / "zotero"
 MANIFEST_PATH = LOCAL_ROOT / "fulltext_manifest.jsonl"
 REPORT_PATH = ROOT / "reports" / "stage2_4b_zotero_attachment_diagnosis.md"
+COMPLETION_REPORT_PATH = ROOT / "reports" / "stage2_4g_zotero_attachment_completion_targets.md"
+USER_STEPS_PATH = ROOT / "reports" / "stage2_4g_user_zotero_steps.md"
 STATUS_PATH = ROOT / "data" / "batches" / "stage2_4b_zotero_attachment_status.jsonl"
+COMPLETION_CSV_PATH = ZOTERO_WORKFLOW_ROOT / "stage2_4g_zotero_completion_targets.csv"
+COMPLETION_JSONL_PATH = ZOTERO_WORKFLOW_ROOT / "stage2_4g_zotero_completion_targets.jsonl"
+TARGETS_RIS_PATH = ZOTERO_WORKFLOW_ROOT / "stage2_4g_targets.ris"
+TARGETS_BIB_PATH = ZOTERO_WORKFLOW_ROOT / "stage2_4g_targets.bib"
+MAPPING_TEMPLATE_PATH = ZOTERO_WORKFLOW_ROOT / "zotero_mapping_template.jsonl"
 
 SUPPORTED_CONTENT_TYPES = {
     "application/pdf": ("pdf", ".pdf"),
     "text/html": ("html", ".html"),
     "application/xhtml+xml": ("html", ".html"),
 }
+SUPPORTED_EXTENSIONS = {
+    "pdf": {".pdf"},
+    "html": {".html", ".htm", ".xhtml"},
+    "si": {".pdf", ".html", ".htm", ".xhtml", ".txt", ".md", ".xml"},
+}
+RECOMMENDED_ACTION_BY_DIAGNOSIS = {
+    "zotero_attachment_synced": "ready_for_ingest",
+    "manual_mapping_synced": "ready_for_ingest",
+    "zotero_item_missing": "import_target_to_zotero",
+    "zotero_item_without_attachment": "run_find_available_pdf_or_manual_attach",
+    "zotero_attachment_file_missing": "sync_zotero_or_relink_attachment",
+    "zotero_attachment_unsupported_type": "attach_pdf_or_html",
+}
+REQUIRED_ACTION_BY_DIAGNOSIS = {
+    "zotero_attachment_synced": "ready_for_ingest",
+    "manual_mapping_synced": "ready_for_ingest",
+    "zotero_item_missing": "create_zotero_item",
+    "zotero_item_without_attachment": "run_find_available_pdf",
+    "zotero_attachment_file_missing": "sync_zotero_storage_or_relink_attachment",
+    "zotero_attachment_unsupported_type": "manual_attach_pdf",
+}
+DIAGNOSES = set(RECOMMENDED_ACTION_BY_DIAGNOSIS)
 
 
 def normalize_doi(value: str) -> str:
@@ -129,32 +160,123 @@ def destination_for(source_id: str, file_type: str, suffix: str) -> Path:
     return LOCAL_ROOT / "si" / f"{source_id}_si_01{suffix}"
 
 
-def copy_attachment(source_id: str, attachment: dict[str, Any], dry_run: bool) -> dict[str, Any] | None:
-    content_type = str(attachment.get("content_type", "")).lower()
-    file_type, suffix = SUPPORTED_CONTENT_TYPES.get(content_type, ("", ""))
-    if not file_type:
-        source_suffix = Path(str(attachment.get("resolved_path", ""))).suffix.lower()
-        if source_suffix == ".pdf":
-            file_type, suffix = "pdf", ".pdf"
-        elif source_suffix in {".html", ".htm", ".xhtml"}:
-            file_type, suffix = "html", ".html"
-    if not file_type or not attachment.get("exists"):
+def file_type_from_path(path: Path, preferred: str = "") -> tuple[str, str]:
+    suffix = path.suffix.lower()
+    if preferred in SUPPORTED_EXTENSIONS and suffix in SUPPORTED_EXTENSIONS[preferred]:
+        return preferred, suffix
+    if suffix == ".pdf":
+        return "pdf", ".pdf"
+    if suffix in {".html", ".htm", ".xhtml"}:
+        return "html", ".html"
+    if preferred == "si" and suffix in SUPPORTED_EXTENSIONS["si"]:
+        return "si", suffix
+    return "", suffix
+
+
+def copy_supported_file(source_id: str, source_path: Path, file_type: str, dry_run: bool) -> dict[str, Any] | None:
+    resolved_type, suffix = file_type_from_path(source_path, file_type)
+    if not resolved_type or not source_path.exists() or not source_path.is_file():
         return None
-    source_path = Path(str(attachment["resolved_path"]))
-    dest = destination_for(source_id, file_type, suffix)
+    dest = destination_for(source_id, resolved_type, suffix)
     if not dry_run:
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source_path, dest)
     return {
-        "file_type": file_type,
+        "file_type": resolved_type,
         "local_path": str(dest.relative_to(ROOT)).replace("\\", "/"),
         "sha256": sha256_file(source_path),
         "bytes": source_path.stat().st_size,
     }
 
 
+def copy_attachment(source_id: str, attachment: dict[str, Any], dry_run: bool) -> dict[str, Any] | None:
+    content_type = str(attachment.get("content_type", "")).lower()
+    file_type, suffix = SUPPORTED_CONTENT_TYPES.get(content_type, ("", ""))
+    source_path = Path(str(attachment.get("resolved_path", "")))
+    if not file_type:
+        file_type, suffix = file_type_from_path(source_path)
+    if not file_type or not attachment.get("exists") or not source_path.exists():
+        return None
+    copied = copy_supported_file(source_id, source_path, file_type, dry_run)
+    if copied:
+        copied["match_method"] = "exact_doi_zotero_attachment"
+    return copied
+
+
+def resolve_user_path(path_text: str) -> Path:
+    path = Path(path_text).expanduser()
+    if not path.is_absolute():
+        path = ROOT / path
+    return path
+
+
+def ensure_mapping_template(manifest: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if MAPPING_TEMPLATE_PATH.exists():
+        return read_jsonl(MAPPING_TEMPLATE_PATH)
+    rows = [
+        {
+            "source_id": row.get("source_id", ""),
+            "doi": row.get("doi", ""),
+            "title": row.get("title", ""),
+            "attachment_path": "",
+            "attachment_type": "pdf",
+            "mapping_method": "manual_user_confirmed",
+            "note": "",
+        }
+        for row in manifest
+    ]
+    write_jsonl(MAPPING_TEMPLATE_PATH, rows)
+    return rows
+
+
+def manual_mapping_by_source(manifest: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    manifest_by_source = {str(row.get("source_id", "")): row for row in manifest}
+    rows = ensure_mapping_template(manifest)
+    accepted: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        source_id = str(row.get("source_id", ""))
+        path_text = str(row.get("attachment_path", "")).strip()
+        if not source_id or not path_text:
+            continue
+        manifest_row = manifest_by_source.get(source_id)
+        if not manifest_row:
+            continue
+        if normalize_doi(str(row.get("doi", ""))) != normalize_doi(str(manifest_row.get("doi", ""))):
+            continue
+        attachment_type = str(row.get("attachment_type", "")).lower()
+        if attachment_type not in SUPPORTED_EXTENSIONS:
+            continue
+        path = resolve_user_path(path_text)
+        file_type, _ = file_type_from_path(path, attachment_type)
+        if not file_type or not path.exists() or not path.is_file():
+            continue
+        accepted[source_id] = {
+            **row,
+            "resolved_path": str(path),
+            "file_type": file_type,
+        }
+    return accepted
+
+
+def apply_manual_mapping(source_id: str, mapping: dict[str, Any], dry_run: bool) -> dict[str, Any] | None:
+    source_path = Path(str(mapping.get("resolved_path", "")))
+    copied = copy_supported_file(source_id, source_path, str(mapping.get("file_type", "")), dry_run)
+    if copied:
+        copied["match_method"] = "manual_user_confirmed"
+    return copied
+
+
+def recommendation(diagnosis: str) -> str:
+    return RECOMMENDED_ACTION_BY_DIAGNOSIS.get(diagnosis, "manual_review")
+
+
+def completion_action(diagnosis: str) -> str:
+    return REQUIRED_ACTION_BY_DIAGNOSIS.get(diagnosis, "manual_attach_pdf")
+
+
 def diagnose_manifest(dry_run: bool) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     manifest = read_jsonl(MANIFEST_PATH)
+    mappings = manual_mapping_by_source(manifest)
     zotero_root = Path.home() / "Zotero"
     with connect_zotero(zotero_db_path()) as con:
         status_rows: list[dict[str, Any]] = []
@@ -172,9 +294,14 @@ def diagnose_manifest(dry_run: bool) -> tuple[list[dict[str, Any]], list[dict[st
                 "zotero_attachment_count": 0,
                 "zotero_attachments_existing": 0,
                 "accepted_attachment_count": 0,
+                "attachment_content_types": [],
+                "attachment_paths": [],
                 "copied_local_path": "",
                 "sha256": "",
+                "match_method": "",
                 "diagnosis": "",
+                "missing_reason": "",
+                "recommended_user_action": "",
             }
             accepted: dict[str, Any] | None = None
             all_attachments: list[dict[str, Any]] = []
@@ -185,7 +312,14 @@ def diagnose_manifest(dry_run: bool) -> tuple[list[dict[str, Any]], list[dict[st
                 row.setdefault("zotero_titles", []).append(item_title)
             row["zotero_attachment_count"] = len(all_attachments)
             row["zotero_attachments_existing"] = sum(1 for attachment in all_attachments if attachment.get("exists"))
+            row["attachment_content_types"] = sorted({str(attachment.get("content_type", "")) for attachment in all_attachments if attachment.get("content_type")})
+            row["attachment_paths"] = [str(attachment.get("resolved_path", "")) for attachment in all_attachments]
+            manual_mapping = mappings.get(source_id)
+            if manual_mapping:
+                accepted = apply_manual_mapping(source_id, manual_mapping, dry_run=dry_run)
             for attachment in all_attachments:
+                if accepted:
+                    break
                 accepted = copy_attachment(source_id, attachment, dry_run=dry_run)
                 if accepted:
                     break
@@ -193,14 +327,17 @@ def diagnose_manifest(dry_run: bool) -> tuple[list[dict[str, Any]], list[dict[st
                 row["accepted_attachment_count"] = 1
                 row["copied_local_path"] = accepted["local_path"]
                 row["sha256"] = accepted["sha256"]
-                row["diagnosis"] = "zotero_attachment_synced"
+                row["match_method"] = accepted.get("match_method", "exact_doi_zotero_attachment")
+                row["diagnosis"] = "manual_mapping_synced" if row["match_method"] == "manual_user_confirmed" else "zotero_attachment_synced"
+                row["recommended_user_action"] = recommendation(row["diagnosis"])
                 updated_manifest.append(
                     {
                         **entry,
-                        "access_method": "zotero_attachment",
+                        "access_method": row["match_method"],
                         "file_type": accepted["file_type"],
                         "local_path": accepted["local_path"],
-                        "license_or_access_note": "Exact DOI Zotero attachment copied into ignored local cache for local ingest only; raw file is not committed.",
+                        "license_or_access_note": "Exact DOI Zotero attachment or user-confirmed local mapping copied into ignored local cache for local ingest only; raw file is not committed.",
+                        "match_method": row["match_method"],
                         "sha256": accepted["sha256"],
                         "status": "pending_ingest",
                         "zotero_item_keys": row["zotero_item_keys"],
@@ -215,16 +352,150 @@ def diagnose_manifest(dry_run: bool) -> tuple[list[dict[str, Any]], list[dict[st
                     row["diagnosis"] = "zotero_attachment_file_missing"
                 else:
                     row["diagnosis"] = "zotero_attachment_unsupported_type"
+                row["missing_reason"] = row["diagnosis"]
+                row["recommended_user_action"] = recommendation(row["diagnosis"])
                 updated_manifest.append(
                     {
                         **entry,
+                        "file_type": None,
+                        "local_path": "",
+                        "match_method": "",
                         "rescue_attempted": True,
                         "rescue_failure_reason": row["diagnosis"],
+                        "sha256": "",
                         "status": "missing_fulltext",
                     }
                 )
             status_rows.append(row)
     return status_rows, updated_manifest
+
+
+def completion_targets(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    targets: list[dict[str, Any]] = []
+    for row in rows:
+        targets.append(
+            {
+                "source_id": row.get("source_id", ""),
+                "doi": row.get("doi", ""),
+                "title": row.get("title", ""),
+                "zotero_item_found": bool(row.get("zotero_item_count", 0)),
+                "zotero_item_key": ",".join(row.get("zotero_item_keys", [])),
+                "attachment_found": bool(row.get("zotero_attachments_existing", 0)),
+                "required_action": completion_action(str(row.get("diagnosis", ""))),
+                "priority": "high",
+            }
+        )
+    return targets
+
+
+def write_completion_files(rows: list[dict[str, Any]]) -> None:
+    targets = completion_targets(rows)
+    ZOTERO_WORKFLOW_ROOT.mkdir(parents=True, exist_ok=True)
+    write_jsonl(COMPLETION_JSONL_PATH, targets)
+    with COMPLETION_CSV_PATH.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=[
+                "source_id",
+                "doi",
+                "title",
+                "zotero_item_found",
+                "zotero_item_key",
+                "attachment_found",
+                "required_action",
+                "priority",
+            ],
+        )
+        writer.writeheader()
+        writer.writerows(targets)
+    write_ris_targets(rows)
+    write_bib_targets(rows)
+    write_completion_report(targets)
+    write_user_steps()
+
+
+def write_ris_targets(rows: list[dict[str, Any]]) -> None:
+    lines: list[str] = []
+    for row in rows:
+        lines.extend(
+            [
+                "TY  - JOUR",
+                f"TI  - {row.get('title', '')}",
+                f"DO  - {row.get('doi', '')}",
+                f"N1  - source_id: {row.get('source_id', '')}",
+                "KW  - ECfinder_stage2_4g",
+                f"KW  - {row.get('source_id', '')}",
+                "ER  -",
+                "",
+            ]
+        )
+    TARGETS_RIS_PATH.write_text("\n".join(lines), encoding="utf-8", newline="\n")
+
+
+def bib_escape(value: Any) -> str:
+    return str(value).replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}")
+
+
+def write_bib_targets(rows: list[dict[str, Any]]) -> None:
+    entries: list[str] = []
+    for row in rows:
+        key = str(row.get("source_id", "")).replace("-", "_")
+        entries.append(
+            "\n".join(
+                [
+                    f"@article{{{key},",
+                    f"  title = {{{bib_escape(row.get('title', ''))}}},",
+                    f"  doi = {{{bib_escape(row.get('doi', ''))}}},",
+                    "  keywords = {ECfinder_stage2_4g},",
+                    f"  note = {{{bib_escape('source_id: ' + str(row.get('source_id', '')))}}}",
+                    "}",
+                ]
+            )
+        )
+    TARGETS_BIB_PATH.write_text("\n\n".join(entries) + "\n", encoding="utf-8", newline="\n")
+
+
+def write_completion_report(targets: list[dict[str, Any]]) -> None:
+    lines = [
+        "# Stage 2.4g Zotero Attachment Completion Targets",
+        "",
+        f"manifest_sources = {len(targets)}",
+        f"zotero_items_found = {sum(1 for row in targets if row['zotero_item_found'])}",
+        f"zotero_items_missing = {sum(1 for row in targets if not row['zotero_item_found'])}",
+        f"attachments_found = {sum(1 for row in targets if row['attachment_found'])}",
+        "",
+        "| source_id | doi | zotero_item_found | zotero_item_key | attachment_found | required_action | priority |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for row in targets:
+        lines.append(
+            "| {source_id} | {doi} | {zotero_item_found} | {zotero_item_key} | {attachment_found} | {required_action} | {priority} |".format(
+                **row
+            )
+        )
+    COMPLETION_REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    COMPLETION_REPORT_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+
+
+def write_user_steps() -> None:
+    lines = [
+        "# Stage 2.4g User Zotero Steps",
+        "",
+        "1. In Zotero, import `data/local_fulltext/zotero/stage2_4g_targets.ris` or `data/local_fulltext/zotero/stage2_4g_targets.bib`.",
+        "2. Create or use a collection named `ECfinder Stage 2.4g Fulltext Targets`.",
+        "3. Move the imported or already existing target items into that collection.",
+        "4. Select the collection items.",
+        "5. Right-click and run `Find Available PDF` / `Find Full Text`.",
+        "6. Wait until Zotero finishes all download attempts.",
+        "7. Confirm whether each item has a PDF or HTML attachment under the exact DOI item.",
+        "8. Return to this repository and run `python scripts/sync_zotero_stage2_4b_attachments.py`.",
+        "",
+        "If Zotero cannot automatically download a PDF, use campus/library access to download the file lawfully, then drag it onto the matching Zotero item as an attachment.",
+        "",
+        "Manual fallback: fill `data/local_fulltext/zotero/zotero_mapping_template.jsonl` with a local attachment path only after confirming the DOI/source_id mapping. The sync script will copy that file into the ignored local full-text cache and will not commit the original attachment.",
+    ]
+    USER_STEPS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    USER_STEPS_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
 
 
 def write_report(rows: list[dict[str, Any]]) -> None:
@@ -234,7 +505,7 @@ def write_report(rows: list[dict[str, Any]]) -> None:
         "zotero_items_missing": sum(1 for row in rows if row["zotero_item_count"] == 0),
         "zotero_items_without_attachment": sum(1 for row in rows if row["diagnosis"] == "zotero_item_without_attachment"),
         "zotero_attachments_existing": sum(int(row["zotero_attachments_existing"]) for row in rows),
-        "attachments_synced": sum(1 for row in rows if row["diagnosis"] == "zotero_attachment_synced"),
+        "attachments_synced": sum(1 for row in rows if row["diagnosis"] in {"zotero_attachment_synced", "manual_mapping_synced"}),
     }
     lines = ["# Stage 2.4b Zotero Attachment Diagnosis", ""]
     for key, value in counts.items():
@@ -242,19 +513,20 @@ def write_report(rows: list[dict[str, Any]]) -> None:
     lines.extend(
         [
             "",
-            "| source_id | doi | zotero_items | attachments | synced | diagnosis |",
-            "| --- | --- | --- | --- | --- | --- |",
+            "| source_id | doi | zotero_items | attachments | synced | diagnosis | recommended_user_action |",
+            "| --- | --- | --- | --- | --- | --- | --- |",
         ]
     )
     for row in rows:
         lines.append(
-            "| {source_id} | {doi} | {items} | {attachments} | {synced} | {diagnosis} |".format(
+            "| {source_id} | {doi} | {items} | {attachments} | {synced} | {diagnosis} | {recommended} |".format(
                 source_id=row["source_id"],
                 doi=row["doi"],
                 items=",".join(row["zotero_item_keys"]),
                 attachments=row["zotero_attachment_count"],
                 synced=row["accepted_attachment_count"],
                 diagnosis=row["diagnosis"],
+                recommended=row["recommended_user_action"],
             )
         )
     REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -268,6 +540,7 @@ def main() -> int:
     rows, updated_manifest = diagnose_manifest(dry_run=args.dry_run)
     write_jsonl(STATUS_PATH, rows)
     write_report(rows)
+    write_completion_files(rows)
     if not args.dry_run:
         write_jsonl(MANIFEST_PATH, updated_manifest)
     summary = {
@@ -275,7 +548,7 @@ def main() -> int:
         "zotero_items_found": sum(1 for row in rows if row["zotero_item_count"] > 0),
         "zotero_items_missing": sum(1 for row in rows if row["zotero_item_count"] == 0),
         "zotero_items_without_attachment": sum(1 for row in rows if row["diagnosis"] == "zotero_item_without_attachment"),
-        "attachments_synced": sum(1 for row in rows if row["diagnosis"] == "zotero_attachment_synced"),
+        "attachments_synced": sum(1 for row in rows if row["diagnosis"] in {"zotero_attachment_synced", "manual_mapping_synced"}),
         "dry_run": args.dry_run,
     }
     print(json.dumps(summary, ensure_ascii=False, sort_keys=True))

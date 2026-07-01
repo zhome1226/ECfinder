@@ -18,6 +18,6 @@ artifact_index_updates = 108
 decision_cache_hits = 0
 decision_cache_misses = 0
 can_scale_to_100_sources = false
-reason = insufficient_campus_fulltext_access
+reason = zotero_items_exist_but_no_fulltext_attachments
 
 note = Raw PDF/HTML/SI files are ignored by Git; only manifest, hashes, tasks, and derived run outputs are committed.
