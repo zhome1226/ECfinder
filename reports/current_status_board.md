@@ -32,3 +32,26 @@ stage2_4_src_027 | Behaviors of N-ethyl perfluorooctane sulfonamide etha... | �
 stage2_4_src_028 | Biotransformation of Sulfluramid (N-ethyl perfluorooc... | ✅ done | ⚠️ missing | ⏭ skipped | ⚠️ manual | ⚠️ manual | manual_review | provide_fulltext_or_zotero_mapping
 stage2_4_src_029 | Isomer-specific biotransformation of perfluoroalkyl s... | ✅ done | ⚠️ missing | ⏭ skipped | ⚠️ manual | ⚠️ manual | manual_review | provide_fulltext_or_zotero_mapping
 stage2_4_src_030 | Accumulation, biodegradation and toxicological effect... | ✅ done | ⚠️ missing | ⏭ skipped | ⚠️ manual | ⚠️ manual | manual_review | provide_fulltext_or_zotero_mapping
+zotero_stage2_4j_src_006 | Transcriptomic response of Gordonia sp. strain NB4-1Y... | ✅ done | ✅ done | ✅ done | ✅ done | ✅ done | rejected | closed_loop_no_natural_validated_records
+zotero_stage2_4j_src_032 | Oxidative Transformation of Nafion-Related Fluorinate... | ✅ done | ✅ done | ✅ done | ✅ done | ✅ done | rejected | closed_loop_no_natural_validated_records
+zotero_stage2_4j_src_033 | Probable New Species of Bacteria of the Genus Pseudom... | ✅ done | ✅ done | ✅ done | ✅ done | ✅ done | rejected | closed_loop_no_natural_validated_records
+zotero_stage2_4j_src_037 | Accelerated Degradation of Perfluorosulfonates and Pe... | ✅ done | ✅ done | ✅ done | ✅ done | ✅ done | rejected | closed_loop_no_natural_validated_records
+zotero_stage2_4j_src_039 | PFAS and Precursor Bioaccumulation in Freshwater Recr... | ✅ done | ✅ done | ✅ done | ✅ done | ✅ done | rejected | closed_loop_no_natural_validated_records
+zotero_stage2_4j_src_050 | Exposure to Environmental Chemicals from Environmenta... | ✅ done | ✅ done | ✅ done | ✅ done | ✅ done | rejected | closed_loop_no_natural_validated_records
+zotero_stage2_4j_src_079 | Biotransformation of 8:2 Fluorotelomer Alcohol in Soi... | ✅ done | ✅ done | ✅ done | ✅ done | ✅ done | validated | validated_records_ready_for_database
+zotero_stage2_4j_src_089 | Characterization of per- and polyfluoroalkyl substanc... | ✅ done | ✅ done | ✅ done | ✅ done | ✅ done | rejected | closed_loop_no_natural_validated_records
+zotero_stage2_4j_src_103 | Biotransformation of 8:2 fluorotelomer alcohol by rec... | ✅ done | ✅ done | ✅ done | ✅ done | ✅ done | rejected | closed_loop_no_natural_validated_records
+zotero_stage2_4j_src_150 | Nitrifying Microorganisms Linked to Biotransformation... | ✅ done | ✅ done | ✅ done | ✅ done | ✅ done | validated | validated_records_ready_for_database
+zotero_stage2_4j_src_159 | Electrocatalytic water treatment of per- and polyfluo... | ✅ done | ✅ done | ✅ done | ✅ done | ✅ done | rejected | closed_loop_no_natural_validated_records
+zotero_stage2_4j_src_160 | Identification of serum metabolites associated with p... | ✅ done | ✅ done | ✅ done | ✅ done | ✅ done | rejected | closed_loop_no_natural_validated_records
+zotero_stage2_4j_src_165 | Untargeted Metabolomics Profiling of a PFAS-Exposed F... | ✅ done | ✅ done | ✅ done | ✅ done | ✅ done | rejected | closed_loop_no_natural_validated_records
+zotero_stage2_4j_src_168 | AI-driven discovery of blood xenobiotic biomarkers in... | ✅ done | ✅ done | ✅ done | ✅ done | ✅ done | rejected | closed_loop_no_natural_validated_records
+zotero_stage2_4j_src_173 | Association between PFAS compounds in follicular flui... | ✅ done | ✅ done | ✅ done | ✅ done | ✅ done | rejected | closed_loop_no_natural_validated_records
+zotero_stage2_4j_src_174 | Biotransformation and partitioning of structurally di... | ✅ done | ✅ done | ✅ done | ✅ done | ✅ done | rejected | closed_loop_no_natural_validated_records
+zotero_stage2_4j_src_176 | Correlation between metabolite concentrations in the ... | ✅ done | ✅ done | ✅ done | ✅ done | ✅ done | rejected | closed_loop_no_natural_validated_records
+zotero_stage2_4j_src_178 | Exposure to polycyclic aromatic hydrocarbons, heavy m... | ✅ done | ✅ done | ✅ done | ✅ done | ✅ done | rejected | closed_loop_no_natural_validated_records
+zotero_stage2_4j_src_182 | Degradation and Defluorination of Per- and Polyfluoro... | ✅ done | ✅ done | ✅ done | ✅ done | ✅ done | rejected | closed_loop_no_natural_validated_records
+zotero_stage2_4j_src_185 | Nontarget analysis and fluorine atom balances of tran... | ✅ done | ✅ done | ✅ done | ✅ done | ✅ done | rejected | closed_loop_no_natural_validated_records
+zotero_stage2_4j_src_186 | Distribution of legacy and emerging per- and polyfluo... | ✅ done | ✅ done | ✅ done | ✅ done | ✅ done | rejected | closed_loop_no_natural_validated_records
+zotero_stage2_4j_src_204 | Spontaneous aqueous defluorination of trifluoromethyl... | ✅ done | ✅ done | ✅ done | ✅ done | ✅ done | rejected | closed_loop_no_natural_validated_records
+zotero_stage2_4j_src_267 | External liquid calibration method for iodide chemica... | ✅ done | ✅ done | ✅ done | ✅ done | ✅ done | rejected | closed_loop_no_natural_validated_records

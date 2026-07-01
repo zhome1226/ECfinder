@@ -1,6 +1,8 @@
 {
   "agent": "ExtractionAgent",
   "chunk_id": null,
+  "completed_at": "2026-07-01T08:56:08Z",
+  "completion_reason": "closed_loop_consumed",
   "created_at": "2026-07-01T07:56:34Z",
   "input_refs": {
     "chunks_ref": "data/runs/stage2_4j_zotero_stage2_4j_src_079/chunks.jsonl",
@@ -17,7 +19,7 @@
   "reason": "Available Zotero full text was parsed; semantic PFAS transformation extraction requires Codex review.",
   "schema_ref": "schemas/transformation_record.schema.json",
   "source_id": "zotero_stage2_4j_src_079",
-  "status": "pending",
+  "status": "done",
   "task_id": "stage2_4j_zotero_stage2_4j_src_079_extract",
   "task_type": "extract"
 }
