@@ -1,0 +1,29 @@
+# Stage 2.6c Streaming Autonomous Summary
+
+batch_id = stage2_6c_zotero_stream
+metadata_sources_seen = 859
+sources_screened = 100
+include_for_fulltext = 4
+manual_screen = 26
+exclude = 70
+fulltext_found = 2
+fulltext_missing = 2
+sources_parsed = 2
+chunks_created = 31
+chunks_screened_extract = 29
+sources_extracted = 2
+candidate_records = 1
+reviewed_records = 1
+validated_records = 0
+manual_review_records = 0
+rejected_records = 1
+auxiliary_records = 1
+database_records_written = 2
+blocked_external_sources = 2
+deferred_sources = 0
+pending_tasks_remaining = 0
+ended_because = controlled_limit_reached
+workflow_streaming_success = true
+ready_for_next_streaming_batch = true
+ready_for_100_source_stream = true
+reason = streaming_closed_loop_verified_with_controlled_limits
