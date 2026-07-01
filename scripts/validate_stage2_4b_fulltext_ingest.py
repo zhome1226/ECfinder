@@ -25,6 +25,7 @@ VALIDATED_PATH = BATCH_DIR / "stage2_4b_validated_records.jsonl"
 MANUAL_PATH = BATCH_DIR / "stage2_4b_manual_review_records.jsonl"
 REJECTED_PATH = BATCH_DIR / "stage2_4b_rejected_records.jsonl"
 CODEX_TASKS_PATH = BATCH_DIR / "stage2_4b_codex_tasks.jsonl"
+ZOTERO_STATUS_PATH = BATCH_DIR / "stage2_4b_zotero_attachment_status.jsonl"
 SUMMARY_PATH = REPORTS_DIR / "stage2_4b_fulltext_ingest_summary.md"
 
 SOURCE_REGISTRY_PATH = STATE_DIR / "source_registry.jsonl"
@@ -137,6 +138,39 @@ def validate_manifest() -> list[dict[str, Any]]:
         if not record.get("status"):
             raise ValueError(f"manifest target missing status: {source_id}")
     return records
+
+
+def validate_zotero_attachment_status(manifest: list[dict[str, Any]]) -> None:
+    if not ZOTERO_STATUS_PATH.exists():
+        return
+    rows = read_jsonl_strict(ZOTERO_STATUS_PATH)
+    if len(rows) != len(manifest):
+        raise ValueError(f"Zotero attachment status count mismatch: expected {len(manifest)}, got {len(rows)}")
+    manifest_by_source = {row["source_id"]: row for row in manifest}
+    for row in rows:
+        source_id = row.get("source_id")
+        if source_id not in manifest_by_source:
+            raise ValueError(f"Zotero status source not in manifest: {source_id}")
+        diagnosis = row.get("diagnosis")
+        if diagnosis not in {
+            "zotero_attachment_synced",
+            "zotero_item_missing",
+            "zotero_item_without_attachment",
+            "zotero_attachment_file_missing",
+            "zotero_attachment_unsupported_type",
+        }:
+            raise ValueError(f"invalid Zotero attachment diagnosis for {source_id}: {diagnosis}")
+        if row.get("accepted_attachment_count", 0):
+            manifest_row = manifest_by_source[source_id]
+            if not manifest_row.get("local_path") or not manifest_row.get("sha256"):
+                raise ValueError(f"Zotero-synced source missing manifest local_path/sha256: {source_id}")
+            if not local_path_exists(str(manifest_row["local_path"])):
+                raise ValueError(f"Zotero-synced local path missing: {source_id}")
+            path = ROOT / str(manifest_row["local_path"])
+            if sha256_file(path) != manifest_row["sha256"]:
+                raise ValueError(f"Zotero-synced manifest sha mismatch: {source_id}")
+        elif manifest_by_source[source_id].get("status") != "missing_fulltext":
+            raise ValueError(f"unsynced Zotero source must remain missing_fulltext: {source_id}")
 
 
 def validate_raw_fulltext_not_committed() -> None:
@@ -320,7 +354,8 @@ def validate_summary(summary: dict[str, Any]) -> None:
 
 
 def main() -> int:
-    validate_manifest()
+    manifest = validate_manifest()
+    validate_zotero_attachment_status(manifest)
     validate_raw_fulltext_not_committed()
     statuses = read_jsonl_strict(STATUS_PATH)
     if len(statuses) != 12:
