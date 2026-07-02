@@ -12,6 +12,7 @@ from ecfinder.state.common import write_json, write_jsonl
 @dataclass(frozen=True)
 class StreamingPaths:
     root: Path
+    prefix: str = "stage2_6c_streaming"
 
     @property
     def batches(self) -> Path:
@@ -27,75 +28,75 @@ class StreamingPaths:
 
     @property
     def source_status(self) -> Path:
-        return self.state / "stage2_6c_streaming_source_status.jsonl"
+        return self.state / f"{self.prefix}_source_status.jsonl"
 
     @property
     def events(self) -> Path:
-        return self.state / "stage2_6c_streaming_events.jsonl"
+        return self.state / f"{self.prefix}_events.jsonl"
 
     @property
     def checkpoint(self) -> Path:
-        return self.state / "stage2_6c_streaming_checkpoint.json"
+        return self.state / f"{self.prefix}_checkpoint.json"
 
     @property
     def screening_decisions(self) -> Path:
-        return self.batches / "stage2_6c_streaming_screening_decisions.jsonl"
+        return self.batches / f"{self.prefix}_screening_decisions.jsonl"
 
     @property
     def chunk_screening(self) -> Path:
-        return self.batches / "stage2_6c_streaming_chunk_screening.jsonl"
+        return self.batches / f"{self.prefix}_chunk_screening.jsonl"
 
     @property
     def candidates(self) -> Path:
-        return self.batches / "stage2_6c_streaming_candidate_records.jsonl"
+        return self.batches / f"{self.prefix}_candidate_records.jsonl"
 
     @property
     def reviewed(self) -> Path:
-        return self.batches / "stage2_6c_streaming_reviewed_records.jsonl"
+        return self.batches / f"{self.prefix}_reviewed_records.jsonl"
 
     @property
     def validated(self) -> Path:
-        return self.batches / "stage2_6c_streaming_validated_records.jsonl"
+        return self.batches / f"{self.prefix}_validated_records.jsonl"
 
     @property
     def manual(self) -> Path:
-        return self.batches / "stage2_6c_streaming_manual_review_records.jsonl"
+        return self.batches / f"{self.prefix}_manual_review_records.jsonl"
 
     @property
     def rejected(self) -> Path:
-        return self.batches / "stage2_6c_streaming_rejected_records.jsonl"
+        return self.batches / f"{self.prefix}_rejected_records.jsonl"
 
     @property
     def auxiliary(self) -> Path:
-        return self.batches / "stage2_6c_streaming_auxiliary_records.jsonl"
+        return self.batches / f"{self.prefix}_auxiliary_records.jsonl"
 
     @property
     def summary_report(self) -> Path:
-        return self.reports / "stage2_6c_streaming_autonomous_summary.md"
+        return self.reports / f"{self.prefix}_autonomous_summary.md"
 
     @property
     def status_board_report(self) -> Path:
-        return self.reports / "stage2_6c_streaming_status_board.md"
+        return self.reports / f"{self.prefix}_status_board.md"
 
     @property
     def skill_audit_report(self) -> Path:
-        return self.reports / "stage2_6c_streaming_skill_invocation_audit.md"
+        return self.reports / f"{self.prefix}_skill_invocation_audit.md"
 
     @property
     def sync_review_report(self) -> Path:
-        return self.reports / "stage2_6c_streaming_synchronous_review_audit.md"
+        return self.reports / f"{self.prefix}_synchronous_review_audit.md"
 
     @property
     def token_report(self) -> Path:
-        return self.reports / "stage2_6c_streaming_token_cost_audit.md"
+        return self.reports / f"{self.prefix}_token_cost_audit.md"
 
     @property
     def blocked_report(self) -> Path:
-        return self.reports / "stage2_6c_streaming_blocked_sources.md"
+        return self.reports / f"{self.prefix}_blocked_sources.md"
 
     @property
     def database_report(self) -> Path:
-        return self.reports / "stage2_6c_streaming_database_audit.md"
+        return self.reports / f"{self.prefix}_database_audit.md"
 
 
 def write_key_value_report(path: Path, title: str, values: dict[str, Any], extra_lines: list[str] | None = None) -> None:

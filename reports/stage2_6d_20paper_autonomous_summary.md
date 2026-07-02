@@ -1,0 +1,29 @@
+# Stage 2.6d 20-paper Workflow Summary
+
+batch_id = stage2_6d_20paper
+metadata_sources_seen = 20
+sources_screened = 20
+include_for_fulltext = 20
+manual_screen = 0
+exclude = 0
+fulltext_found = 20
+fulltext_missing = 0
+sources_parsed = 20
+chunks_created = 255
+chunks_screened_extract = 218
+sources_extracted = 20
+candidate_records = 10
+reviewed_records = 10
+validated_records = 9
+manual_review_records = 0
+rejected_records = 17
+auxiliary_records = 1
+database_records_written = 27
+blocked_external_sources = 0
+deferred_sources = 0
+pending_tasks_remaining = 0
+ended_because = no_runnable_tasks_remain
+workflow_streaming_success = true
+ready_for_next_streaming_batch = true
+ready_for_100_source_stream = false
+reason = 20paper_integrated_workflow_completed_not_100_source_gate

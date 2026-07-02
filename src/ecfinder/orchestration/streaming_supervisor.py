@@ -152,6 +152,8 @@ class StreamingSupervisor:
         max_screen: int,
         max_fulltext: int,
         max_extract_sources: int,
+        output_prefix: str = "stage2_6c_streaming",
+        update_source_registry: bool = True,
     ) -> None:
         self.root = root
         self.batch_id = batch_id
@@ -159,7 +161,8 @@ class StreamingSupervisor:
         self.max_screen = max_screen
         self.max_fulltext = max_fulltext
         self.max_extract_sources = max_extract_sources
-        self.paths = StreamingPaths(root)
+        self.paths = StreamingPaths(root, output_prefix)
+        self.update_source_registry_enabled = update_source_registry
         self.registry = SkillRegistry(root)
         self.events: list[dict[str, Any]] = []
         self.status_rows: list[dict[str, Any]] = []
@@ -383,7 +386,14 @@ class StreamingSupervisor:
         has_pfas = _contains_any(text, PFAS_TERMS)
         has_transform = _contains_any(text, TRANSFORM_TERMS)
         has_env = _contains_any(text, ENV_TERMS)
-        if negative_hits:
+        if source.get("force_include_for_fulltext") is True:
+            decision = "include_for_fulltext"
+            topic = "high" if has_pfas else "medium"
+            env_rel = "unclear"
+            evidence = "possible"
+            next_action = "fulltext_ingest"
+            reason = "manual high-priority integration smoke override; review enforces natural-environment boundary"
+        elif negative_hits:
             decision = "exclude"
             topic = "low"
             env_rel = "engineered_treatment" if any(hit in {"wastewater", "wwtp", "activated sludge"} for hit in negative_hits) else "not_relevant"
@@ -729,6 +739,8 @@ class StreamingSupervisor:
         write_jsonl(path, rows)
 
     def upsert_streaming_source(self, metadata: dict[str, Any], status: dict[str, Any]) -> None:
+        if not self.update_source_registry_enabled:
+            return
         refs = status.get("artifact_refs", {})
         upsert_source(
             self.root / "data" / "state" / "source_registry.jsonl",
@@ -859,9 +871,10 @@ class StreamingSupervisor:
         return bad
 
     def write_reports(self, high_chunk_sources: int) -> None:
-        write_key_value_report(self.paths.summary_report, "Stage 2.6c Streaming Autonomous Summary", self.summary)
+        title_prefix = self.batch_id.replace("_", " ")
+        write_key_value_report(self.paths.summary_report, f"{title_prefix} Streaming Autonomous Summary", self.summary)
         status_lines = [
-            "# Stage 2.6c Streaming Status Board",
+            f"# {title_prefix} Streaming Status Board",
             "",
             "| source_id | title_short | screening | fulltext | parse | extract | review | database | overall | next_action |",
             "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
@@ -874,7 +887,7 @@ class StreamingSupervisor:
         skill_counts: defaultdict[str, int] = defaultdict(int)
         for event in self.events:
             skill_counts[str(event.get("skill_id", ""))] += 1
-        skill_lines = ["# Stage 2.6c Streaming Skill Invocation Audit", ""]
+        skill_lines = [f"# {title_prefix} Streaming Skill Invocation Audit", ""]
         skill_lines.append(f"skill_invocation_audit_passed = {str(all(event.get('skill_id') for event in self.events)).lower()}")
         skill_lines.append(f"skill_invocations = {len(self.events)}")
         skill_lines.append("")
@@ -887,7 +900,7 @@ class StreamingSupervisor:
             "database_records_written": self.summary["database_records_written"],
             "synchronous_review_audit_passed": len(self.candidate_rows) == len(self.reviewed_rows),
         }
-        write_key_value_report(self.paths.sync_review_report, "Stage 2.6c Streaming Synchronous Review Audit", sync_values)
+        write_key_value_report(self.paths.sync_review_report, f"{title_prefix} Streaming Synchronous Review Audit", sync_values)
         token_values = {
             "screening_cache_hits": self.token_stats["screening_cache_hits"],
             "screening_cache_misses": self.token_stats["screening_cache_misses"],
@@ -902,8 +915,8 @@ class StreamingSupervisor:
             "estimated_total_tokens": len(self.screening_rows) * 180 + self.extract_sources * 1400 + len(self.reviewed_rows) * 350,
             "high_relevance_chunk_sources": high_chunk_sources,
         }
-        write_key_value_report(self.paths.token_report, "Stage 2.6c Streaming Token Cost Audit", token_values)
-        blocked_lines = ["# Stage 2.6c Streaming Blocked Sources", "", "| source_id | doi | title | next_action |", "| --- | --- | --- | --- |"]
+        write_key_value_report(self.paths.token_report, f"{title_prefix} Streaming Token Cost Audit", token_values)
+        blocked_lines = [f"# {title_prefix} Streaming Blocked Sources", "", "| source_id | doi | title | next_action |", "| --- | --- | --- | --- |"]
         for row in self.status_rows:
             if row.get("overall_status") == "blocked_external":
                 blocked_lines.append(f"| {row.get('source_id', '')} | {row.get('doi', '')} | {_short_title(str(row.get('title', '')))} | {row.get('next_action', '')} |")
@@ -916,7 +929,7 @@ class StreamingSupervisor:
             "database_records_written": self.summary["database_records_written"],
             "forbidden_boundary_violations": len(self.forbidden_validated_records()),
         }
-        write_key_value_report(self.paths.database_report, "Stage 2.6c Streaming Database Audit", db_values)
+        write_key_value_report(self.paths.database_report, f"{title_prefix} Streaming Database Audit", db_values)
 
 
 def run_streaming_supervisor(
@@ -926,5 +939,16 @@ def run_streaming_supervisor(
     max_screen: int,
     max_fulltext: int,
     max_extract_sources: int,
+    output_prefix: str = "stage2_6c_streaming",
+    update_source_registry: bool = True,
 ) -> dict[str, Any]:
-    return StreamingSupervisor(root, batch_id, metadata_queue, max_screen, max_fulltext, max_extract_sources).run()
+    return StreamingSupervisor(
+        root,
+        batch_id,
+        metadata_queue,
+        max_screen,
+        max_fulltext,
+        max_extract_sources,
+        output_prefix,
+        update_source_registry,
+    ).run()
