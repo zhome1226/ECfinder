@@ -39,13 +39,17 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def normalize_string(value: str) -> str:
+    return value.replace("\r\n", "\\n").replace("\n", "\\n").replace("\r", "\\n")
+
+
 def normalize_value(value: Any) -> Any:
     if isinstance(value, dict):
-        return {key: normalize_value(child) for key, child in value.items()}
+        return {normalize_string(str(key)): normalize_value(child) for key, child in value.items()}
     if isinstance(value, list):
         return [normalize_value(child) for child in value]
     if isinstance(value, str):
-        return value.replace("\r\n", "\\n").replace("\n", "\\n").replace("\r", "\\n")
+        return normalize_string(value)
     return value
 
 

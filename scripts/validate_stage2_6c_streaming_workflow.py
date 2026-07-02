@@ -65,8 +65,50 @@ def as_bool(values: dict[str, str], key: str) -> bool:
     return values.get(key, "false") == "true"
 
 
+def find_raw_newline_strings(value: Any, path: str = "$") -> list[str]:
+    if isinstance(value, dict):
+        hits: list[str] = []
+        for key, child in value.items():
+            if "\n" in str(key) or "\r" in str(key):
+                hits.append(f"{path}.{key!r}")
+            hits.extend(find_raw_newline_strings(child, f"{path}.{key}"))
+        return hits
+    if isinstance(value, list):
+        hits = []
+        for idx, child in enumerate(value):
+            hits.extend(find_raw_newline_strings(child, f"{path}[{idx}]"))
+        return hits
+    if isinstance(value, str) and ("\n" in value or "\r" in value):
+        return [path]
+    return []
+
+
 def validate_jsonl(path: Path) -> list[dict[str, Any]]:
-    rows = read_jsonl(require(path))
+    require(path)
+    rows: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        for line_no, raw_line in enumerate(handle, start=1):
+            if raw_line == "":
+                continue
+            line = raw_line.rstrip("\n")
+            if line.endswith("\r"):
+                line = line[:-1]
+            if not line.strip():
+                continue
+            if "} {" in line:
+                raise ValueError(f"{path}:{line_no} contains multiple JSON objects on one line")
+            if raw_line.count("\n") != 1 or "\r" in raw_line:
+                raise ValueError(f"{path}:{line_no} has non-normalized physical line ending")
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"{path}:{line_no} is not one complete JSON object: {exc}") from exc
+            if not isinstance(obj, dict):
+                raise ValueError(f"{path}:{line_no} is not a JSON object")
+            newline_hits = find_raw_newline_strings(obj)
+            if newline_hits:
+                raise ValueError(f"{path}:{line_no} contains raw newline inside JSON string: {newline_hits[:5]}")
+            rows.append(obj)
     return rows
 
 

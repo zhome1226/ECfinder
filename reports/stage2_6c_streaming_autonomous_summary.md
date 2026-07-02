@@ -24,6 +24,7 @@ deferred_sources = 0
 pending_tasks_remaining = 0
 ended_because = controlled_limit_reached
 workflow_streaming_success = true
+streaming_jsonl_serialization_fixed = true
 ready_for_next_streaming_batch = true
 ready_for_100_source_stream = true
 reason = streaming_closed_loop_verified_with_controlled_limits
