@@ -24,7 +24,7 @@ def main() -> int:
     parser.add_argument("--max-screen", type=int, default=100)
     parser.add_argument("--max-fulltext", type=int, default=20)
     parser.add_argument("--max-extract-sources", type=int, default=10)
-    parser.add_argument("--resume-from", default="")
+    parser.add_argument("--resume-from", nargs="*", default=[])
     parser.add_argument("--max-new-screen", type=int)
     parser.add_argument("--max-new-fulltext", type=int)
     parser.add_argument("--max-new-extract-sources", type=int)
@@ -32,7 +32,12 @@ def main() -> int:
     args = parser.parse_args()
     output_prefix = args.output_prefix
     if not output_prefix:
-        output_prefix = "stage2_6d_streaming" if args.batch_id.startswith("stage2_6d") else "stage2_6c_streaming"
+        if args.batch_id.startswith("stage2_6e"):
+            output_prefix = "stage2_6e_streaming"
+        elif args.batch_id.startswith("stage2_6d"):
+            output_prefix = "stage2_6d_streaming"
+        else:
+            output_prefix = "stage2_6c_streaming"
     summary = run_streaming_supervisor(
         ROOT,
         args.batch_id,
@@ -41,7 +46,7 @@ def main() -> int:
         args.max_new_fulltext if args.max_new_fulltext is not None else args.max_fulltext,
         args.max_new_extract_sources if args.max_new_extract_sources is not None else args.max_extract_sources,
         output_prefix=output_prefix,
-        resume_from=ROOT / args.resume_from if args.resume_from else None,
+        resume_from=[ROOT / path for path in args.resume_from],
     )
     print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
     return 0

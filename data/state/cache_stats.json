@@ -1,6 +1,6 @@
 {
-  "artifact_index_records": 280,
-  "decision_cache_records": 394,
+  "artifact_index_records": 285,
+  "decision_cache_records": 426,
   "download_cache_hits": 30,
   "download_cache_misses": 0,
   "extraction_cache_hits": 29,
@@ -13,7 +13,7 @@
   "review_cache_misses": 1,
   "screening_cache_hits": 30,
   "screening_cache_misses": 0,
-  "source_registry_records": 53,
+  "source_registry_records": 57,
   "task_registry_records": 73,
   "tasks_created": 29,
   "tokens_saved_estimate": 173000

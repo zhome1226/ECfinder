@@ -149,6 +149,17 @@ PATTERNS: list[dict[str, Any]] = [
         "quote_regex": r"NB4-1Y transforms both 6:2 FTAB and 6:2 FTSA to 16 observable metabolites over 7 days.*?sole sulfur sources",
         "auxiliary": True,
     },
+    {
+        "source_title": "Fluorotelomer alcohols are efficiently biotransformed by Cunninghamella elegans",
+        "parent": "6:2 fluorotelomer alcohol",
+        "products": ["5:3 fluorotelomer carboxylic acid"],
+        "condition": "Cunninghamella elegans pre-grown pure culture incubation with 6:2 FTOH",
+        "matrix": "pure culture fungal biotransformation assay",
+        "setting_type": "auxiliary_pure_culture_mechanistic",
+        "tier": "tentative_validated",
+        "quote_regex": r"biotransformation of 6:2 fluorotelomer alcohol .*?The main metabolite formed was the 5:3 fluorotelomer carboxylic acid",
+        "auxiliary": True,
+    },
 ]
 
 

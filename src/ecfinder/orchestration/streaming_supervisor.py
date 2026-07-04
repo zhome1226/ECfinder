@@ -12,7 +12,7 @@ import json
 import re
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from ecfinder.skills.skill_registry import SkillRegistry
 from ecfinder.state.artifact_index import index_artifact
@@ -29,6 +29,7 @@ from ecfinder.state.common import (
 from ecfinder.state.decision_cache import find_decision, upsert_decision
 from ecfinder.state.source_registry import upsert_source
 
+from .fulltext_parse import make_chunks, parse_local_file, resolve_local_path
 from .streaming_state import StreamingPaths, reset_streaming_outputs, write_key_value_report
 from .task_executor import extract_candidates, review_candidates, source_rejection_reason
 
@@ -51,11 +52,15 @@ PFAS_TERMS = [
 ]
 TRANSFORM_TERMS = [
     "precursor",
+    "biotransform",
+    "biotransformed",
+    "biotransforming",
     "biotransformation",
     "biodegradation",
     "transformation",
     "degradation",
     "metabolite",
+    "metabolites",
     "pathway",
     "product",
     "defluorination",
@@ -102,6 +107,8 @@ NATURAL_VALID_EXCLUDE = [
     "wastewater treatment",
     "wwtp",
     "engineered biological treatment",
+    "pure culture only",
+    "pure culture",
     "advanced oxidation",
     "electrochemical",
     "plasma",
@@ -154,7 +161,7 @@ class StreamingSupervisor:
         max_extract_sources: int,
         output_prefix: str = "stage2_6c_streaming",
         update_source_registry: bool = True,
-        resume_from: Path | None = None,
+        resume_from: Path | Sequence[Path] | None = None,
     ) -> None:
         self.root = root
         self.batch_id = batch_id
@@ -164,7 +171,12 @@ class StreamingSupervisor:
         self.max_extract_sources = max_extract_sources
         self.paths = StreamingPaths(root, output_prefix)
         self.update_source_registry_enabled = update_source_registry
-        self.resume_from = resume_from
+        if resume_from is None:
+            self.resume_from: list[Path] = []
+        elif isinstance(resume_from, Path):
+            self.resume_from = [resume_from]
+        else:
+            self.resume_from = list(resume_from)
         self.registry = SkillRegistry(root)
         self.events: list[dict[str, Any]] = []
         self.status_rows: list[dict[str, Any]] = []
@@ -184,6 +196,8 @@ class StreamingSupervisor:
         self.previous_status_rows: list[dict[str, Any]] = []
         self.skip_source_ids: set[str] = set()
         self.previously_processed_source_ids: set[str] = set()
+        self.previously_processed_zotero_keys: set[str] = set()
+        self.previously_processed_dois: set[str] = set()
         self.skipped_previously_completed_sources = 0
 
     def run(self) -> dict[str, Any]:
@@ -194,7 +208,13 @@ class StreamingSupervisor:
         ended = "no_runnable_tasks_remain"
         for source in queue:
             source_id = str(source.get("source_id", ""))
-            if source_id and source_id in self.skip_source_ids:
+            zotero_key = str(source.get("zotero_item_key", ""))
+            doi = str(source.get("doi", "")).strip().lower()
+            if (
+                (source_id and source_id in self.skip_source_ids)
+                or (zotero_key and zotero_key in self.previously_processed_zotero_keys)
+                or (doi and doi in self.previously_processed_dois)
+            ):
                 self.skipped_previously_completed_sources += 1
                 continue
             if len(self.screening_rows) >= self.max_screen:
@@ -243,14 +263,19 @@ class StreamingSupervisor:
             self.fulltext_processed += 1
             status["fulltext_status"] = "found"
 
-            chunks_ref = self.resolve_chunks_ref(manifest)
+            chunks_info = self.resolve_chunks_ref(source, manifest)
+            chunks_ref = str(chunks_info.get("chunks_ref", ""))
             if not chunks_ref:
                 status.update({"parse_status": "failed", "overall_status": "failed", "next_action": "inspect_parser_failure"})
                 self.status_rows.append(status)
                 continue
             chunks = read_jsonl(self.root / chunks_ref)
-            status["parse_status"] = "skipped"
+            status["parse_status"] = str(chunks_info.get("parse_status", "skipped"))
             status["artifact_refs"]["chunks_ref"] = chunks_ref
+            if chunks_info.get("metadata_ref"):
+                status["artifact_refs"]["metadata_ref"] = chunks_info["metadata_ref"]
+            if chunks_info.get("download_ref"):
+                status["artifact_refs"]["download_ref"] = chunks_info["download_ref"]
             self.invoke("ParseAgent", source, "parse", {"chunks_ref": chunks_ref})
             self.invoke("ChunkAgent", source, "chunk_relevance", {"chunks_ref": chunks_ref})
             high_chunks = self.screen_chunks(source, chunks)
@@ -284,8 +309,6 @@ class StreamingSupervisor:
         if not self.resume_from:
             self.load_previously_processed_registry_sources()
             return
-        path = self.resume_from if self.resume_from.is_absolute() else self.root / self.resume_from
-        self.previous_status_rows = read_jsonl(path)
         terminal = {
             "excluded",
             "manual_screen",
@@ -295,21 +318,62 @@ class StreamingSupervisor:
             "auxiliary",
             "completed_no_records",
         }
-        for row in self.previous_status_rows:
-            if row.get("screening_status") in {"done", "cache_hit"} and row.get("overall_status") in terminal:
-                source_id = str(row.get("source_id", ""))
-                if source_id:
-                    self.skip_source_ids.add(source_id)
+        for resume_path in self.resume_from:
+            path = resume_path if resume_path.is_absolute() else self.root / resume_path
+            for row in read_jsonl(path):
+                self.previous_status_rows.append(row)
+                if row.get("screening_status") in {"done", "cache_hit"} and row.get("overall_status") in terminal:
+                    source_id = str(row.get("source_id", ""))
+                    zotero_key = str(row.get("zotero_item_key", ""))
+                    doi = str(row.get("doi", "")).strip().lower()
+                    if source_id:
+                        self.skip_source_ids.add(source_id)
+                    if zotero_key:
+                        self.previously_processed_zotero_keys.add(zotero_key)
+                    if doi:
+                        self.previously_processed_dois.add(doi)
         self.load_previously_processed_registry_sources()
 
     def load_previously_processed_registry_sources(self) -> None:
         registry_path = self.root / "data" / "state" / "source_registry.jsonl"
+
+        def ref_has_rows(ref: str) -> bool:
+            if not ref:
+                return False
+            path = self.root / ref
+            if not path.exists():
+                return False
+            return any(line.strip() for line in path.read_text(encoding="utf-8").splitlines())
+
         for row in read_jsonl(registry_path):
-            if any(row.get(key) for key in ["candidate_records_ref", "reviewed_records_ref", "validated_records_ref", "rejected_records_ref"]):
+            refs_text = " ".join(
+                str(row.get(key, ""))
+                for key in [
+                    "metadata_ref",
+                    "chunks_ref",
+                    "download_ref",
+                    "candidate_records_ref",
+                    "reviewed_records_ref",
+                    "validated_records_ref",
+                    "manual_review_ref",
+                    "rejected_records_ref",
+                ]
+            )
+            if self.paths.prefix and self.paths.prefix in refs_text:
+                continue
+            has_database_output = bool(row.get("status") in {"validated", "rejected", "auxiliary", "manual_review"})
+            has_review_refs = any(ref_has_rows(str(row.get(key, ""))) for key in ["reviewed_records_ref", "validated_records_ref", "rejected_records_ref"])
+            if has_database_output or has_review_refs:
                 source_id = str(row.get("source_id", ""))
+                zotero_key = str(row.get("zotero_item_key", ""))
+                doi = str(row.get("doi", "")).strip().lower()
                 if source_id:
                     self.previously_processed_source_ids.add(source_id)
                     self.skip_source_ids.add(source_id)
+                if zotero_key:
+                    self.previously_processed_zotero_keys.add(zotero_key)
+                if doi:
+                    self.previously_processed_dois.add(doi)
 
     def ensure_metadata_queue(self) -> list[dict[str, Any]]:
         if self.metadata_queue.exists():
@@ -515,12 +579,69 @@ class StreamingSupervisor:
                 return row
         return None
 
-    def resolve_chunks_ref(self, manifest: dict[str, Any]) -> str:
-        source_id = str(manifest.get("source_id", ""))
-        existing = self.root / "data" / "runs" / f"stage2_4j_{source_id}" / "chunks.jsonl"
-        if existing.exists():
-            return relative_path(self.root, existing)
-        return ""
+    def resolve_chunks_ref(self, source: dict[str, Any], manifest: dict[str, Any]) -> dict[str, str]:
+        source_id = str(source.get("source_id", "") or manifest.get("source_id", ""))
+        manifest_source_id = str(manifest.get("source_id", ""))
+        for candidate_id in [source_id, manifest_source_id]:
+            if not candidate_id:
+                continue
+            existing = self.root / "data" / "runs" / f"stage2_4j_{candidate_id}" / "chunks.jsonl"
+            if existing.exists():
+                run_dir = existing.parent
+                return {
+                    "chunks_ref": relative_path(self.root, existing),
+                    "metadata_ref": relative_path(self.root, run_dir / "source_metadata.json") if (run_dir / "source_metadata.json").exists() else "",
+                    "download_ref": relative_path(self.root, run_dir / "download_status.json") if (run_dir / "download_status.json").exists() else "",
+                    "parse_status": "skipped",
+                }
+        parsed = self.parse_manifest_attachment(source, manifest)
+        return parsed
+
+    def parse_manifest_attachment(self, source: dict[str, Any], manifest: dict[str, Any]) -> dict[str, str]:
+        source_id = str(source.get("source_id", "") or manifest.get("source_id", ""))
+        local_path_text = str(manifest.get("local_path", ""))
+        local_path = resolve_local_path(self.root, local_path_text)
+        if not local_path or not local_path.exists() or not local_path.is_file():
+            return {}
+        metadata = {
+            "source_id": source_id,
+            "doi": source.get("doi") or manifest.get("doi", ""),
+            "title": source.get("title") or manifest.get("title", ""),
+            "year": source.get("year", ""),
+            "journal": source.get("journal", ""),
+            "authors": [],
+            "provider": "stage2_6e_streaming_attachment_priority" if self.paths.prefix.startswith("stage2_6e") else "streaming_attachment_parse",
+            "zotero_item_key": source.get("zotero_item_key") or manifest.get("zotero_item_key", ""),
+        }
+        blocks, parse_warning = parse_local_file(manifest, local_path)
+        run_prefix = self.output_stage_prefix()
+        chunks = make_chunks(blocks, manifest, metadata, run_prefix)
+        run_dir = self.root / "data" / "runs" / f"{run_prefix}_{source_id}"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        download_status = {
+            "access_method": manifest.get("access_method", "zotero_local_attachment"),
+            "checked_at": utc_now(),
+            "doi": metadata.get("doi", ""),
+            "file_type": manifest.get("file_type", ""),
+            "full_text_available": True,
+            "full_text_downloaded": False,
+            "full_text_path_ref": "local_zotero_attachment_not_committed",
+            "fulltext_sha256": sha256_file(local_path),
+            "local_fulltext_found": True,
+            "reason": parse_warning or "Lawful local attachment parsed into streaming chunks",
+            "source_id": source_id,
+            "status": "ingested" if chunks else "ingested_no_relevant_chunks",
+            "text_source_mode": f"local_{manifest.get('file_type', 'fulltext')}",
+        }
+        write_json(run_dir / "source_metadata.json", metadata)
+        write_json(run_dir / "download_status.json", download_status)
+        write_jsonl(run_dir / "chunks.jsonl", chunks)
+        return {
+            "chunks_ref": relative_path(self.root, run_dir / "chunks.jsonl"),
+            "metadata_ref": relative_path(self.root, run_dir / "source_metadata.json"),
+            "download_ref": relative_path(self.root, run_dir / "download_status.json"),
+            "parse_status": "done",
+        }
 
     def screen_chunks(self, source: dict[str, Any], chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
         high_chunks: list[dict[str, Any]] = []
@@ -788,6 +909,18 @@ class StreamingSupervisor:
         if not self.update_source_registry_enabled:
             return
         refs = status.get("artifact_refs", {})
+        metadata_ref = refs.get("metadata_ref", "")
+        chunks_ref = refs.get("chunks_ref", "")
+        download_ref = refs.get("download_ref", "")
+        if self.paths.prefix.startswith("stage2_6e"):
+            if metadata_ref.startswith("data/runs/stage2_6e_"):
+                metadata_ref = self.relative_queue_ref()
+            if chunks_ref.startswith("data/runs/stage2_6e_"):
+                chunks_ref = ""
+            if download_ref.startswith("data/runs/stage2_6e_"):
+                download_ref = ""
+        metadata_path = self.root / metadata_ref if metadata_ref else None
+        chunks_path = self.root / chunks_ref if chunks_ref else None
         upsert_source(
             self.root / "data" / "state" / "source_registry.jsonl",
             {
@@ -797,9 +930,9 @@ class StreamingSupervisor:
                 "year": metadata.get("year", ""),
                 "journal": metadata.get("journal", ""),
                 "authors": metadata.get("authors", []),
-                "metadata_ref": refs.get("metadata_ref", ""),
+                "metadata_ref": metadata_ref,
                 "screening_ref": refs.get("screening_ref", ""),
-                "chunks_ref": refs.get("chunks_ref", ""),
+                "chunks_ref": chunks_ref,
                 "candidate_records_ref": refs.get("candidate_records_ref", ""),
                 "reviewed_records_ref": refs.get("reviewed_records_ref", ""),
                 "validated_records_ref": refs.get("validated_records_ref", ""),
@@ -809,9 +942,9 @@ class StreamingSupervisor:
                 "hashes": {
                     "doi_hash": sha256_text(str(metadata.get("doi", "")).lower()),
                     "title_hash": sha256_text(" ".join(str(metadata.get("title", "")).lower().split())),
-                    "metadata_hash": sha256_file(self.root / refs["metadata_ref"]) if refs.get("metadata_ref") else "",
+                    "metadata_hash": sha256_file(metadata_path) if metadata_path and metadata_path.exists() else "",
                     "fulltext_hash": "",
-                    "chunks_hash": sha256_file(self.root / refs["chunks_ref"]) if refs.get("chunks_ref") else "",
+                    "chunks_hash": sha256_file(chunks_path) if chunks_path and chunks_path.exists() else "",
                 },
             },
         )
@@ -836,11 +969,24 @@ class StreamingSupervisor:
         chunks_seen = len(self.chunk_rows)
         high_chunk_sources = len({row["source_id"] for row in self.chunk_rows if row.get("relevance_decision") == "extract"})
         database_records = len(self.validated_rows) + len(self.manual_rows) + len(self.rejected_rows) + len(self.auxiliary_rows)
+        fulltext_found = sum(1 for row in self.status_rows if row.get("fulltext_status") == "found")
+        sources_parsed = sum(1 for row in self.status_rows if row.get("parse_status") in {"done", "skipped"})
         no_pending = True
         sync_ok = len(self.candidate_rows) == len(self.reviewed_rows)
         skill_ok = all(row.get("skill_id") for row in self.events)
         token_ok = self.token_stats["long_context_violations"] == 0 and self.token_stats["fulltext_context_violations"] == 0
         no_duplicate_reprocessing = self.no_duplicate_reprocessing()
+        fulltext_chain_verified = (
+            fulltext_found >= 3
+            and sources_parsed >= 3
+            and self.extract_sources >= 2
+            and len(self.candidate_rows) >= 1
+            and len(self.reviewed_rows) == len(self.candidate_rows)
+            and no_pending
+            and token_ok
+            and strict_jsonl_ok
+            and not self.forbidden_validated_records()
+        )
         ready_larger = (
             len(self.screening_rows) >= 200
             and sync_ok
@@ -850,7 +996,11 @@ class StreamingSupervisor:
             and not self.forbidden_validated_records()
         )
         success = no_pending and sync_ok and skill_ok and token_ok and strict_jsonl_ok and no_duplicate_reprocessing
-        if success and not self.validated_rows:
+        if self.paths.prefix.startswith("stage2_6e") and success and not fulltext_chain_verified:
+            reason = "attachment_priority_queue_did_not_find_enough_extractable_fulltext"
+        elif self.paths.prefix.startswith("stage2_6e") and fulltext_chain_verified:
+            reason = "attachment_priority_fulltext_extraction_review_chain_verified"
+        elif success and not self.validated_rows:
             reason = "streaming_workflow_success_but_no_new_natural_validated_records"
         elif ready_larger:
             reason = "streaming_batch_verified_ready_for_larger_streaming_batch"
@@ -867,17 +1017,19 @@ class StreamingSupervisor:
         )
         self.summary = {
             "batch_id": self.batch_id,
+            "priority_queue_size": len(queue) if self.paths.prefix.startswith("stage2_6e") else 0,
             "previous_sources_screened": previous_sources_screened,
             "new_sources_screened": len(self.screening_rows),
             "cumulative_sources_screened": previous_sources_screened + len(self.screening_rows),
             "metadata_sources_seen": len(queue),
+            "sources_with_pdf_or_html_attachment_in_queue": sum(1 for row in queue if row.get("has_pdf_or_html_attachment") or row.get("pdf_or_html_attachment_count")),
             "sources_screened": len(self.screening_rows),
             "include_for_fulltext": include,
             "manual_screen": sum(1 for row in self.screening_rows if row.get("screening_decision") == "manual_screen"),
             "exclude": excluded,
-            "fulltext_found": sum(1 for row in self.status_rows if row.get("fulltext_status") == "found"),
+            "fulltext_found": fulltext_found,
             "fulltext_missing": sum(1 for row in self.status_rows if row.get("fulltext_status") == "missing"),
-            "sources_parsed": sum(1 for row in self.status_rows if row.get("parse_status") in {"done", "skipped"}),
+            "sources_parsed": sources_parsed,
             "chunks_created": chunks_seen,
             "chunks_screened_extract": sum(1 for row in self.chunk_rows if row.get("relevance_decision") == "extract"),
             "sources_extracted": self.extract_sources,
@@ -905,6 +1057,8 @@ class StreamingSupervisor:
             "ready_for_next_streaming_batch": success,
             "ready_for_100_source_stream": ready_larger,
             "ready_for_larger_streaming_batch": ready_larger,
+            "fulltext_extraction_review_chain_verified": fulltext_chain_verified,
+            "ready_for_random_or_full_queue_stream": fulltext_chain_verified,
             "strict_jsonl_audit_passed": strict_jsonl_ok,
             "no_duplicate_source_reprocessing": no_duplicate_reprocessing,
             "reason": reason,
@@ -971,7 +1125,23 @@ class StreamingSupervisor:
         previous = {str(row.get("source_id", "")) for row in self.previous_status_rows if row.get("source_id")}
         previous |= self.previously_processed_source_ids
         current = {str(row.get("source_id", "")) for row in self.status_rows if row.get("source_id")}
-        return not bool(previous & current)
+        if previous & current:
+            return False
+        previous_keys = {
+            str(row.get("zotero_item_key", ""))
+            for row in self.previous_status_rows
+            if row.get("zotero_item_key")
+        } | self.previously_processed_zotero_keys
+        current_keys = {str(row.get("zotero_item_key", "")) for row in self.status_rows if row.get("zotero_item_key")}
+        if previous_keys & current_keys:
+            return False
+        previous_dois = {
+            str(row.get("doi", "")).strip().lower()
+            for row in self.previous_status_rows
+            if row.get("doi")
+        } | self.previously_processed_dois
+        current_dois = {str(row.get("doi", "")).strip().lower() for row in self.status_rows if row.get("doi")}
+        return not bool(previous_dois & current_dois)
 
     def index_batch_artifacts(self) -> None:
         artifact_index = self.root / "data" / "state" / "artifact_index.jsonl"
@@ -1057,13 +1227,16 @@ class StreamingSupervisor:
         }
         write_key_value_report(self.paths.database_report, f"{title_prefix} Streaming Database Audit", db_values)
         resume_values = {
-            "resume_from": relative_path(self.root, self.resume_from if self.resume_from and self.resume_from.is_absolute() else self.root / self.resume_from)
-            if self.resume_from
-            else "",
+            "resume_from": ", ".join(
+                relative_path(self.root, path if path.is_absolute() else self.root / path)
+                for path in self.resume_from
+            ),
             "previous_status_rows": len(self.previous_status_rows),
             "previous_sources_screened": self.summary.get("previous_sources_screened", 0),
             "skip_set_size": len(self.skip_source_ids),
             "previously_processed_registry_sources": len(self.previously_processed_source_ids),
+            "previously_processed_zotero_keys": len(self.previously_processed_zotero_keys),
+            "previously_processed_dois": len(self.previously_processed_dois),
             "skipped_previously_completed_sources": self.skipped_previously_completed_sources,
             "new_sources_screened": self.summary.get("new_sources_screened", 0),
             "no_duplicate_source_reprocessing": self.summary.get("no_duplicate_source_reprocessing", False),
@@ -1092,6 +1265,9 @@ class StreamingSupervisor:
         strict_lines.append("")
         strict_lines.append(f"strict_jsonl_audit_passed = {str(self.summary.get('strict_jsonl_audit_passed', False)).lower()}")
         self.paths.strict_jsonl_report.write_text("\n".join(strict_lines) + "\n", encoding="utf-8", newline="\n")
+        if self.paths.prefix == "stage2_6e_streaming":
+            alias = self.root / "reports" / "stage2_6e_strict_jsonl_audit.md"
+            alias.write_text("\n".join(strict_lines) + "\n", encoding="utf-8", newline="\n")
 
 
 def run_streaming_supervisor(
@@ -1103,7 +1279,7 @@ def run_streaming_supervisor(
     max_extract_sources: int,
     output_prefix: str = "stage2_6c_streaming",
     update_source_registry: bool = True,
-    resume_from: Path | None = None,
+    resume_from: Path | Sequence[Path] | None = None,
 ) -> dict[str, Any]:
     return StreamingSupervisor(
         root,

@@ -1,0 +1,11 @@
+{
+  "batch_id": "stage2_6e_attachment_priority_stream",
+  "can_resume": true,
+  "cumulative_sources_screened": 327,
+  "ended_because": "no_runnable_tasks_remain",
+  "last_run_finished_at": "2026-07-04T10:33:41Z",
+  "metadata_sources_seen": 27,
+  "new_sources_screened": 27,
+  "previous_sources_screened": 300,
+  "sources_screened": 27
+}
