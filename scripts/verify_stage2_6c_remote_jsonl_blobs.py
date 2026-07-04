@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import subprocess
+import time
 import urllib.request
 from pathlib import Path
 from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-TMP_CLONE = Path.home() / "AppData" / "Local" / "Temp" / "ecfinder_stage2_6c_jsonl_remote_verify"
+TMP_ROOT = Path.home() / "AppData" / "Local" / "Temp"
 REPORT = ROOT / "reports" / "stage2_6c_commit_blob_jsonl_verification.md"
 REPO_RAW = "https://raw.githubusercontent.com/zhome1226/ECfinder"
 TARGETS = [
@@ -79,14 +81,18 @@ def fetch_raw(commit: str, target: str) -> str:
 
 def main() -> int:
     commit = run(["git", "rev-parse", "HEAD"])
-    if TMP_CLONE.exists():
-        shutil.rmtree(TMP_CLONE)
-    run(["git", "clone", "--branch", "PFASfinder", "--depth", "1", "https://github.com/zhome1226/ECfinder.git", str(TMP_CLONE)])
-    clone_commit = run(["git", "rev-parse", "HEAD"], cwd=TMP_CLONE)
+    tmp_clone = TMP_ROOT / f"ecfinder_stage2_6c_jsonl_remote_verify_{os.getpid()}_{int(time.time())}"
+    try:
+        run(["git", "clone", "--branch", "PFASfinder", "--depth", "1", "https://github.com/zhome1226/ECfinder.git", str(tmp_clone)])
+        clone_commit = run(["git", "rev-parse", "HEAD"], cwd=tmp_clone)
+    except Exception:
+        if tmp_clone.exists():
+            shutil.rmtree(tmp_clone, ignore_errors=True)
+        raise
     records: list[dict[str, Any]] = []
     for target in TARGETS:
         head_text = run_raw(["git", "show", f"HEAD:{target}"])
-        clone_text = (TMP_CLONE / target).read_text(encoding="utf-8")
+        clone_text = (tmp_clone / target).read_text(encoding="utf-8")
         raw_text = fetch_raw(commit, target)
         head = analyze_text(head_text)
         clone = analyze_text(clone_text)
@@ -120,6 +126,7 @@ def main() -> int:
             f"{row['github_raw']['physical_lines']} | {str(row['all_sha256_match']).lower()} | `{first}` |"
         )
     REPORT.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    shutil.rmtree(tmp_clone, ignore_errors=True)
     print(json.dumps({"commit": commit, "targets": len(TARGETS), "all_sha256_match": True}, ensure_ascii=False, sort_keys=True))
     return 0
 

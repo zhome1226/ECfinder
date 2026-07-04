@@ -154,6 +154,7 @@ class StreamingSupervisor:
         max_extract_sources: int,
         output_prefix: str = "stage2_6c_streaming",
         update_source_registry: bool = True,
+        resume_from: Path | None = None,
     ) -> None:
         self.root = root
         self.batch_id = batch_id
@@ -163,6 +164,7 @@ class StreamingSupervisor:
         self.max_extract_sources = max_extract_sources
         self.paths = StreamingPaths(root, output_prefix)
         self.update_source_registry_enabled = update_source_registry
+        self.resume_from = resume_from
         self.registry = SkillRegistry(root)
         self.events: list[dict[str, Any]] = []
         self.status_rows: list[dict[str, Any]] = []
@@ -179,14 +181,23 @@ class StreamingSupervisor:
         self.fulltext_processed = 0
         self.extract_sources = 0
         self.summary: dict[str, Any] = {}
+        self.previous_status_rows: list[dict[str, Any]] = []
+        self.skip_source_ids: set[str] = set()
+        self.previously_processed_source_ids: set[str] = set()
+        self.skipped_previously_completed_sources = 0
 
     def run(self) -> dict[str, Any]:
         reset_streaming_outputs(self.paths)
         queue = self.ensure_metadata_queue()
+        self.load_resume_skip_set()
         available = self.load_available_manifest()
         ended = "no_runnable_tasks_remain"
-        for index, source in enumerate(queue, start=1):
-            if index > self.max_screen:
+        for source in queue:
+            source_id = str(source.get("source_id", ""))
+            if source_id and source_id in self.skip_source_ids:
+                self.skipped_previously_completed_sources += 1
+                continue
+            if len(self.screening_rows) >= self.max_screen:
                 ended = "controlled_limit_reached"
                 break
             status = self.initial_status(source)
@@ -269,6 +280,37 @@ class StreamingSupervisor:
         self.write_outputs(queue, ended)
         return self.summary
 
+    def load_resume_skip_set(self) -> None:
+        if not self.resume_from:
+            self.load_previously_processed_registry_sources()
+            return
+        path = self.resume_from if self.resume_from.is_absolute() else self.root / self.resume_from
+        self.previous_status_rows = read_jsonl(path)
+        terminal = {
+            "excluded",
+            "manual_screen",
+            "blocked_external",
+            "validated",
+            "rejected",
+            "auxiliary",
+            "completed_no_records",
+        }
+        for row in self.previous_status_rows:
+            if row.get("screening_status") in {"done", "cache_hit"} and row.get("overall_status") in terminal:
+                source_id = str(row.get("source_id", ""))
+                if source_id:
+                    self.skip_source_ids.add(source_id)
+        self.load_previously_processed_registry_sources()
+
+    def load_previously_processed_registry_sources(self) -> None:
+        registry_path = self.root / "data" / "state" / "source_registry.jsonl"
+        for row in read_jsonl(registry_path):
+            if any(row.get(key) for key in ["candidate_records_ref", "reviewed_records_ref", "validated_records_ref", "rejected_records_ref"]):
+                source_id = str(row.get("source_id", ""))
+                if source_id:
+                    self.previously_processed_source_ids.add(source_id)
+                    self.skip_source_ids.add(source_id)
+
     def ensure_metadata_queue(self) -> list[dict[str, Any]]:
         if self.metadata_queue.exists():
             return read_jsonl(self.metadata_queue)
@@ -309,6 +351,9 @@ class StreamingSupervisor:
             return relative_path(self.root, self.metadata_queue)
         except ValueError:
             return str(self.metadata_queue)
+
+    def output_stage_prefix(self) -> str:
+        return self.paths.prefix.removesuffix("_streaming")
 
     def initial_status(self, source: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -616,9 +661,9 @@ class StreamingSupervisor:
         source_id = str(source.get("source_id", ""))
         for idx, record in enumerate(records, start=1):
             row = json.loads(json.dumps(record, ensure_ascii=False))
-            row["record_id"] = f"stage2_6c_{source_id}_candidate_{idx:03d}"
+            row["record_id"] = f"{self.output_stage_prefix()}_{source_id}_candidate_{idx:03d}"
             row["provenance"] = {
-                "added_by": "stage2_6c_streaming_supervisor",
+                "added_by": f"{self.output_stage_prefix()}_streaming_supervisor",
                 "batch_id": self.batch_id,
                 "stage": "streaming_extract",
             }
@@ -640,7 +685,7 @@ class StreamingSupervisor:
                 "database_write_agent": "DatabaseWriteAgent",
                 "synchronous": True,
             }
-            row["record_id"] = row.get("record_id") or f"stage2_6c_{source_id}_reviewed_{idx:03d}"
+            row["record_id"] = row.get("record_id") or f"{self.output_stage_prefix()}_{source_id}_reviewed_{idx:03d}"
             rewritten.append(row)
         return rewritten
 
@@ -649,7 +694,7 @@ class StreamingSupervisor:
         rewritten: list[dict[str, Any]] = []
         for idx, record in enumerate(records, start=1):
             row = json.loads(json.dumps(record, ensure_ascii=False))
-            row["record_id"] = f"stage2_6c_{source_id}_rejected_{idx:03d}"
+            row["record_id"] = f"{self.output_stage_prefix()}_{source_id}_rejected_{idx:03d}"
             row["review_status"] = "rejected"
             row["rejection_reason"] = row.get("rejection_reason") or fallback_reason
             row["database_write_ref"] = relative_path(self.root, self.paths.rejected)
@@ -676,7 +721,7 @@ class StreamingSupervisor:
     def no_evidence_record(self, source: dict[str, Any], chunk_id: str, reason: str) -> dict[str, Any]:
         title = str(source.get("title", ""))
         return {
-            "record_id": f"stage2_6c_{source.get('source_id', '')}_rejected_001",
+            "record_id": f"{self.output_stage_prefix()}_{source.get('source_id', '')}_rejected_001",
             "source_id": source.get("source_id", ""),
             "doi": source.get("doi", ""),
             "title": title,
@@ -702,14 +747,15 @@ class StreamingSupervisor:
     def append_blocked(self, source: dict[str, Any]) -> None:
         path = self.root / "data" / "state" / "blocked_external_queue.jsonl"
         rows = read_jsonl(path)
-        key = (source.get("source_id", ""), "stage2_6c_fulltext_missing")
+        blocker_type = f"{self.paths.prefix}_fulltext_missing"
+        key = (source.get("source_id", ""), blocker_type)
         rows = [row for row in rows if (row.get("source_id"), row.get("blocker_type")) != key]
         rows.append(
             {
                 "source_id": source.get("source_id", ""),
                 "doi": source.get("doi", ""),
                 "title": source.get("title", ""),
-                "blocker_type": "stage2_6c_fulltext_missing",
+                "blocker_type": blocker_type,
                 "required_external_action": "attach_pdf_to_zotero_or_provide_local_fulltext",
                 "status": "blocked_external",
                 "note": "Title/abstract screening passed, but no lawful local PDF/HTML/SI cache was found.",
@@ -720,7 +766,7 @@ class StreamingSupervisor:
     def append_manual_handoff(self, source: dict[str, Any], stage: str, reason: str) -> None:
         path = self.root / "data" / "state" / "manual_handoff_queue.jsonl"
         rows = read_jsonl(path)
-        handoff_id = f"stage2_6c_{source.get('source_id', '')}_{stage}"
+        handoff_id = f"{self.paths.prefix}_{source.get('source_id', '')}_{stage}"
         rows = [row for row in rows if row.get("handoff_id") != handoff_id]
         rows.append(
             {
@@ -782,6 +828,7 @@ class StreamingSupervisor:
         write_jsonl(self.paths.source_status, self.status_rows)
         write_jsonl(self.paths.events, self.events)
         self.index_batch_artifacts()
+        strict_jsonl_ok = self.strict_jsonl_audit_passed()
         blocked = sum(1 for row in self.status_rows if row.get("overall_status") == "blocked_external")
         manual = sum(1 for row in self.status_rows if row.get("overall_status") == "manual_screen")
         include = sum(1 for row in self.screening_rows if row.get("screening_decision") == "include_for_fulltext")
@@ -793,20 +840,36 @@ class StreamingSupervisor:
         sync_ok = len(self.candidate_rows) == len(self.reviewed_rows)
         skill_ok = all(row.get("skill_id") for row in self.events)
         token_ok = self.token_stats["long_context_violations"] == 0 and self.token_stats["fulltext_context_violations"] == 0
-        ready_100 = (
-            len(self.screening_rows) >= 100
-            and self.extract_sources >= 1
-            and len(self.candidate_rows) >= 1
+        no_duplicate_reprocessing = self.no_duplicate_reprocessing()
+        ready_larger = (
+            len(self.screening_rows) >= 200
             and sync_ok
             and token_ok
+            and strict_jsonl_ok
+            and no_duplicate_reprocessing
             and not self.forbidden_validated_records()
         )
-        success = no_pending and sync_ok and skill_ok and token_ok
-        reason = "streaming_closed_loop_verified_with_controlled_limits" if ready_100 else "streaming_workflow_success_but_no_validated_records_yet"
+        success = no_pending and sync_ok and skill_ok and token_ok and strict_jsonl_ok and no_duplicate_reprocessing
+        if success and not self.validated_rows:
+            reason = "streaming_workflow_success_but_no_new_natural_validated_records"
+        elif ready_larger:
+            reason = "streaming_batch_verified_ready_for_larger_streaming_batch"
+        else:
+            reason = "streaming_workflow_success_with_reviewed_database_outputs"
         if not success:
             reason = "streaming_validation_prerequisites_not_met"
+        previous_sources_screened = len(
+            {
+                str(row.get("source_id", ""))
+                for row in self.previous_status_rows
+                if row.get("screening_status") in {"done", "cache_hit"} and row.get("source_id")
+            }
+        )
         self.summary = {
             "batch_id": self.batch_id,
+            "previous_sources_screened": previous_sources_screened,
+            "new_sources_screened": len(self.screening_rows),
+            "cumulative_sources_screened": previous_sources_screened + len(self.screening_rows),
             "metadata_sources_seen": len(queue),
             "sources_screened": len(self.screening_rows),
             "include_for_fulltext": include,
@@ -827,11 +890,23 @@ class StreamingSupervisor:
             "database_records_written": database_records,
             "blocked_external_sources": blocked,
             "deferred_sources": self.deferred_sources,
+            "skipped_previously_completed_sources": self.skipped_previously_completed_sources,
+            "screening_cache_hits": self.token_stats["screening_cache_hits"],
+            "screening_cache_misses": self.token_stats["screening_cache_misses"],
+            "extraction_cache_hits": self.token_stats["extraction_cache_hits"],
+            "extraction_cache_misses": self.token_stats["extraction_cache_misses"],
+            "review_cache_hits": self.token_stats["review_cache_hits"],
+            "review_cache_misses": self.token_stats["review_cache_misses"],
+            "long_context_violations": self.token_stats["long_context_violations"],
+            "fulltext_context_violations": self.token_stats["fulltext_context_violations"],
             "pending_tasks_remaining": 0,
             "ended_because": ended,
             "workflow_streaming_success": success,
             "ready_for_next_streaming_batch": success,
-            "ready_for_100_source_stream": ready_100,
+            "ready_for_100_source_stream": ready_larger,
+            "ready_for_larger_streaming_batch": ready_larger,
+            "strict_jsonl_audit_passed": strict_jsonl_ok,
+            "no_duplicate_source_reprocessing": no_duplicate_reprocessing,
             "reason": reason,
         }
         write_json(
@@ -840,12 +915,63 @@ class StreamingSupervisor:
                 "batch_id": self.batch_id,
                 "metadata_sources_seen": len(queue),
                 "sources_screened": len(self.screening_rows),
+                "previous_sources_screened": previous_sources_screened,
+                "new_sources_screened": len(self.screening_rows),
+                "cumulative_sources_screened": previous_sources_screened + len(self.screening_rows),
                 "last_run_finished_at": utc_now(),
                 "can_resume": True,
                 "ended_because": ended,
             },
         )
         self.write_reports(high_chunk_sources)
+
+    def strict_jsonl_audit_passed(self) -> bool:
+        for path in [
+            self.paths.screening_decisions,
+            self.paths.chunk_screening,
+            self.paths.candidates,
+            self.paths.reviewed,
+            self.paths.validated,
+            self.paths.manual,
+            self.paths.rejected,
+            self.paths.auxiliary,
+            self.paths.source_status,
+            self.paths.events,
+        ]:
+            try:
+                self.strict_jsonl_rows(path)
+            except Exception:
+                return False
+        return True
+
+    def strict_jsonl_rows(self, path: Path) -> int:
+        rows = 0
+        with path.open("r", encoding="utf-8", newline="") as handle:
+            for line_no, raw_line in enumerate(handle, start=1):
+                if not raw_line.strip():
+                    continue
+                if "} {" in raw_line:
+                    raise ValueError(f"{path}:{line_no} contains multiple JSON objects")
+                if raw_line.count("\n") != 1 or "\r" in raw_line:
+                    raise ValueError(f"{path}:{line_no} has non-normalized line ending")
+                obj = json.loads(raw_line.rstrip("\n"))
+                if self.value_has_raw_newline(obj):
+                    raise ValueError(f"{path}:{line_no} contains raw CR/LF inside parsed string")
+                rows += 1
+        return rows
+
+    def value_has_raw_newline(self, value: Any) -> bool:
+        if isinstance(value, dict):
+            return any("\n" in str(key) or "\r" in str(key) or self.value_has_raw_newline(child) for key, child in value.items())
+        if isinstance(value, list):
+            return any(self.value_has_raw_newline(child) for child in value)
+        return isinstance(value, str) and ("\n" in value or "\r" in value)
+
+    def no_duplicate_reprocessing(self) -> bool:
+        previous = {str(row.get("source_id", "")) for row in self.previous_status_rows if row.get("source_id")}
+        previous |= self.previously_processed_source_ids
+        current = {str(row.get("source_id", "")) for row in self.status_rows if row.get("source_id")}
+        return not bool(previous & current)
 
     def index_batch_artifacts(self) -> None:
         artifact_index = self.root / "data" / "state" / "artifact_index.jsonl"
@@ -930,6 +1056,42 @@ class StreamingSupervisor:
             "forbidden_boundary_violations": len(self.forbidden_validated_records()),
         }
         write_key_value_report(self.paths.database_report, f"{title_prefix} Streaming Database Audit", db_values)
+        resume_values = {
+            "resume_from": relative_path(self.root, self.resume_from if self.resume_from and self.resume_from.is_absolute() else self.root / self.resume_from)
+            if self.resume_from
+            else "",
+            "previous_status_rows": len(self.previous_status_rows),
+            "previous_sources_screened": self.summary.get("previous_sources_screened", 0),
+            "skip_set_size": len(self.skip_source_ids),
+            "previously_processed_registry_sources": len(self.previously_processed_source_ids),
+            "skipped_previously_completed_sources": self.skipped_previously_completed_sources,
+            "new_sources_screened": self.summary.get("new_sources_screened", 0),
+            "no_duplicate_source_reprocessing": self.summary.get("no_duplicate_source_reprocessing", False),
+        }
+        write_key_value_report(self.paths.resume_skip_report, f"{title_prefix} Streaming Resume Skip Audit", resume_values)
+        strict_lines = [
+            f"# {title_prefix} Strict JSONL Audit",
+            "",
+            "| path | rows | strict_jsonl |",
+            "| --- | ---: | --- |",
+        ]
+        for path in [
+            self.paths.screening_decisions,
+            self.paths.chunk_screening,
+            self.paths.candidates,
+            self.paths.reviewed,
+            self.paths.validated,
+            self.paths.manual,
+            self.paths.rejected,
+            self.paths.auxiliary,
+            self.paths.source_status,
+            self.paths.events,
+        ]:
+            rows = self.strict_jsonl_rows(path)
+            strict_lines.append(f"| {relative_path(self.root, path)} | {rows} | true |")
+        strict_lines.append("")
+        strict_lines.append(f"strict_jsonl_audit_passed = {str(self.summary.get('strict_jsonl_audit_passed', False)).lower()}")
+        self.paths.strict_jsonl_report.write_text("\n".join(strict_lines) + "\n", encoding="utf-8", newline="\n")
 
 
 def run_streaming_supervisor(
@@ -941,6 +1103,7 @@ def run_streaming_supervisor(
     max_extract_sources: int,
     output_prefix: str = "stage2_6c_streaming",
     update_source_registry: bool = True,
+    resume_from: Path | None = None,
 ) -> dict[str, Any]:
     return StreamingSupervisor(
         root,
@@ -951,4 +1114,5 @@ def run_streaming_supervisor(
         max_extract_sources,
         output_prefix,
         update_source_registry,
+        resume_from,
     ).run()

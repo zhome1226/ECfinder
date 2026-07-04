@@ -98,6 +98,14 @@ class StreamingPaths:
     def database_report(self) -> Path:
         return self.reports / f"{self.prefix}_database_audit.md"
 
+    @property
+    def resume_skip_report(self) -> Path:
+        return self.reports / f"{self.prefix}_resume_skip_audit.md"
+
+    @property
+    def strict_jsonl_report(self) -> Path:
+        return self.reports / f"{self.prefix}_strict_jsonl_audit.md"
+
 
 def write_key_value_report(path: Path, title: str, values: dict[str, Any], extra_lines: list[str] | None = None) -> None:
     lines = [f"# {title}", ""]

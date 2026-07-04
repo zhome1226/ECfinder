@@ -1,0 +1,11 @@
+{
+  "batch_id": "stage2_6d_zotero_stream_batch2",
+  "can_resume": true,
+  "cumulative_sources_screened": 300,
+  "ended_because": "controlled_limit_reached",
+  "last_run_finished_at": "2026-07-04T03:58:58Z",
+  "metadata_sources_seen": 859,
+  "new_sources_screened": 200,
+  "previous_sources_screened": 100,
+  "sources_screened": 200
+}

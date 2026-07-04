@@ -1,7 +1,7 @@
 # Stage 2.6c Commit Blob JSONL Verification
 
-local_head = 9962132a30113bd45e886f26bdfec98e7ece4e7d
-fresh_clone_head = 9962132a30113bd45e886f26bdfec98e7ece4e7d
+local_head = 25e925ed251ef46e8908a4ac8219198cf7481ea1
+fresh_clone_head = 25e925ed251ef46e8908a4ac8219198cf7481ea1
 targets = 8
 all_targets_strict_jsonl = true
 all_sha256_match = true
