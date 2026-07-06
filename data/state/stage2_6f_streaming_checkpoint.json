@@ -1,0 +1,11 @@
+{
+  "batch_id": "stage2_6f_environment_priority_stream",
+  "can_resume": true,
+  "cumulative_sources_screened": 349,
+  "ended_because": "no_runnable_tasks_remain",
+  "last_run_finished_at": "2026-07-06T03:48:13Z",
+  "metadata_sources_seen": 22,
+  "new_sources_screened": 22,
+  "previous_sources_screened": 327,
+  "sources_screened": 22
+}

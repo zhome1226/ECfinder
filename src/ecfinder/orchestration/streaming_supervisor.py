@@ -52,6 +52,7 @@ PFAS_TERMS = [
 ]
 TRANSFORM_TERMS = [
     "precursor",
+    "precursor assay",
     "biotransform",
     "biotransformed",
     "biotransforming",
@@ -63,6 +64,10 @@ TRANSFORM_TERMS = [
     "metabolites",
     "pathway",
     "product",
+    "transformation product",
+    "degradation product",
+    "top assay",
+    "top-related",
     "defluorination",
     "destruction",
 ]
@@ -198,6 +203,11 @@ class StreamingSupervisor:
         self.previously_processed_source_ids: set[str] = set()
         self.previously_processed_zotero_keys: set[str] = set()
         self.previously_processed_dois: set[str] = set()
+        self.registry_processed_zotero_keys: set[str] = set()
+        self.registry_processed_dois: set[str] = set()
+        self.allowed_rescreen_source_ids: set[str] = set()
+        self.allowed_rescreen_zotero_keys: set[str] = set()
+        self.allowed_rescreen_dois: set[str] = set()
         self.skipped_previously_completed_sources = 0
 
     def run(self) -> dict[str, Any]:
@@ -210,13 +220,16 @@ class StreamingSupervisor:
             source_id = str(source.get("source_id", ""))
             zotero_key = str(source.get("zotero_item_key", ""))
             doi = str(source.get("doi", "")).strip().lower()
-            if (
-                (source_id and source_id in self.skip_source_ids)
-                or (zotero_key and zotero_key in self.previously_processed_zotero_keys)
-                or (doi and doi in self.previously_processed_dois)
-            ):
+            if self.should_skip_source(source):
                 self.skipped_previously_completed_sources += 1
                 continue
+            if source.get("allow_manual_rescreen") is True:
+                if source_id:
+                    self.allowed_rescreen_source_ids.add(source_id)
+                if zotero_key:
+                    self.allowed_rescreen_zotero_keys.add(zotero_key)
+                if doi:
+                    self.allowed_rescreen_dois.add(doi)
             if len(self.screening_rows) >= self.max_screen:
                 ended = "controlled_limit_reached"
                 break
@@ -334,6 +347,25 @@ class StreamingSupervisor:
                         self.previously_processed_dois.add(doi)
         self.load_previously_processed_registry_sources()
 
+    def should_skip_source(self, source: dict[str, Any]) -> bool:
+        source_id = str(source.get("source_id", ""))
+        zotero_key = str(source.get("zotero_item_key", ""))
+        doi = str(source.get("doi", "")).strip().lower()
+        if source_id and source_id in self.previously_processed_source_ids:
+            return True
+        if zotero_key and zotero_key in self.registry_processed_zotero_keys:
+            return True
+        if doi and doi in self.registry_processed_dois:
+            return True
+        allow_manual_rescreen = source.get("allow_manual_rescreen") is True
+        if allow_manual_rescreen:
+            return False
+        return bool(
+            (source_id and source_id in self.skip_source_ids)
+            or (zotero_key and zotero_key in self.previously_processed_zotero_keys)
+            or (doi and doi in self.previously_processed_dois)
+        )
+
     def load_previously_processed_registry_sources(self) -> None:
         registry_path = self.root / "data" / "state" / "source_registry.jsonl"
 
@@ -372,8 +404,10 @@ class StreamingSupervisor:
                     self.skip_source_ids.add(source_id)
                 if zotero_key:
                     self.previously_processed_zotero_keys.add(zotero_key)
+                    self.registry_processed_zotero_keys.add(zotero_key)
                 if doi:
                     self.previously_processed_dois.add(doi)
+                    self.registry_processed_dois.add(doi)
 
     def ensure_metadata_queue(self) -> list[dict[str, Any]]:
         if self.metadata_queue.exists():
@@ -912,12 +946,13 @@ class StreamingSupervisor:
         metadata_ref = refs.get("metadata_ref", "")
         chunks_ref = refs.get("chunks_ref", "")
         download_ref = refs.get("download_ref", "")
-        if self.paths.prefix.startswith("stage2_6e"):
-            if metadata_ref.startswith("data/runs/stage2_6e_"):
+        if self.paths.prefix.startswith(("stage2_6e", "stage2_6f")):
+            run_ref_prefix = f"data/runs/{self.output_stage_prefix()}_"
+            if metadata_ref.startswith(run_ref_prefix):
                 metadata_ref = self.relative_queue_ref()
-            if chunks_ref.startswith("data/runs/stage2_6e_"):
+            if chunks_ref.startswith(run_ref_prefix):
                 chunks_ref = ""
-            if download_ref.startswith("data/runs/stage2_6e_"):
+            if download_ref.startswith(run_ref_prefix):
                 download_ref = ""
         metadata_path = self.root / metadata_ref if metadata_ref else None
         chunks_path = self.root / chunks_ref if chunks_ref else None
@@ -987,6 +1022,21 @@ class StreamingSupervisor:
             and strict_jsonl_ok
             and not self.forbidden_validated_records()
         )
+        environment_priority_chain_verified = (
+            len(self.screening_rows) > 0
+            and no_pending
+            and token_ok
+            and strict_jsonl_ok
+            and no_duplicate_reprocessing
+            and not self.forbidden_validated_records()
+        )
+        ready_larger_environment = (
+            environment_priority_chain_verified
+            and self.extract_sources >= 1
+            and len(self.candidate_rows) >= 1
+            and len(self.reviewed_rows) == len(self.candidate_rows)
+            and database_records >= len(self.reviewed_rows)
+        )
         ready_larger = (
             len(self.screening_rows) >= 200
             and sync_ok
@@ -1000,6 +1050,10 @@ class StreamingSupervisor:
             reason = "attachment_priority_queue_did_not_find_enough_extractable_fulltext"
         elif self.paths.prefix.startswith("stage2_6e") and fulltext_chain_verified:
             reason = "attachment_priority_fulltext_extraction_review_chain_verified"
+        elif self.paths.prefix.startswith("stage2_6f") and success and not ready_larger_environment:
+            reason = "environment_priority_stream_completed_but_insufficient_extractable_natural_environment_records"
+        elif self.paths.prefix.startswith("stage2_6f") and ready_larger_environment:
+            reason = "environment_priority_stream_verified_with_reviewed_database_outputs"
         elif success and not self.validated_rows:
             reason = "streaming_workflow_success_but_no_new_natural_validated_records"
         elif ready_larger:
@@ -1017,12 +1071,15 @@ class StreamingSupervisor:
         )
         self.summary = {
             "batch_id": self.batch_id,
-            "priority_queue_size": len(queue) if self.paths.prefix.startswith("stage2_6e") else 0,
+            "priority_queue_size": len(queue) if self.paths.prefix.startswith(("stage2_6e", "stage2_6f")) else 0,
             "previous_sources_screened": previous_sources_screened,
             "new_sources_screened": len(self.screening_rows),
             "cumulative_sources_screened": previous_sources_screened + len(self.screening_rows),
             "metadata_sources_seen": len(queue),
             "sources_with_pdf_or_html_attachment_in_queue": sum(1 for row in queue if row.get("has_pdf_or_html_attachment") or row.get("pdf_or_html_attachment_count")),
+            "environment_priority_sources": sum(1 for row in queue if int(row.get("environment_score", 0) or 0) > 0 and int(row.get("transformation_score", 0) or 0) > 0),
+            "previous_include_sources": sum(1 for row in queue if row.get("previous_screening_decision") == "include_for_fulltext"),
+            "manual_rescreen_sources": sum(1 for row in queue if row.get("allow_manual_rescreen") is True),
             "sources_screened": len(self.screening_rows),
             "include_for_fulltext": include,
             "manual_screen": sum(1 for row in self.screening_rows if row.get("screening_decision") == "manual_screen"),
@@ -1059,6 +1116,8 @@ class StreamingSupervisor:
             "ready_for_larger_streaming_batch": ready_larger,
             "fulltext_extraction_review_chain_verified": fulltext_chain_verified,
             "ready_for_random_or_full_queue_stream": fulltext_chain_verified,
+            "environment_priority_chain_verified": environment_priority_chain_verified,
+            "ready_for_larger_environment_stream": ready_larger_environment,
             "strict_jsonl_audit_passed": strict_jsonl_ok,
             "no_duplicate_source_reprocessing": no_duplicate_reprocessing,
             "reason": reason,
@@ -1125,6 +1184,8 @@ class StreamingSupervisor:
         previous = {str(row.get("source_id", "")) for row in self.previous_status_rows if row.get("source_id")}
         previous |= self.previously_processed_source_ids
         current = {str(row.get("source_id", "")) for row in self.status_rows if row.get("source_id")}
+        previous -= self.allowed_rescreen_source_ids
+        current -= self.allowed_rescreen_source_ids
         if previous & current:
             return False
         previous_keys = {
@@ -1133,6 +1194,8 @@ class StreamingSupervisor:
             if row.get("zotero_item_key")
         } | self.previously_processed_zotero_keys
         current_keys = {str(row.get("zotero_item_key", "")) for row in self.status_rows if row.get("zotero_item_key")}
+        previous_keys -= self.allowed_rescreen_zotero_keys
+        current_keys -= self.allowed_rescreen_zotero_keys
         if previous_keys & current_keys:
             return False
         previous_dois = {
@@ -1141,6 +1204,8 @@ class StreamingSupervisor:
             if row.get("doi")
         } | self.previously_processed_dois
         current_dois = {str(row.get("doi", "")).strip().lower() for row in self.status_rows if row.get("doi")}
+        previous_dois -= self.allowed_rescreen_dois
+        current_dois -= self.allowed_rescreen_dois
         return not bool(previous_dois & current_dois)
 
     def index_batch_artifacts(self) -> None:
@@ -1267,6 +1332,9 @@ class StreamingSupervisor:
         self.paths.strict_jsonl_report.write_text("\n".join(strict_lines) + "\n", encoding="utf-8", newline="\n")
         if self.paths.prefix == "stage2_6e_streaming":
             alias = self.root / "reports" / "stage2_6e_strict_jsonl_audit.md"
+            alias.write_text("\n".join(strict_lines) + "\n", encoding="utf-8", newline="\n")
+        if self.paths.prefix == "stage2_6f_streaming":
+            alias = self.root / "reports" / "stage2_6f_strict_jsonl_audit.md"
             alias.write_text("\n".join(strict_lines) + "\n", encoding="utf-8", newline="\n")
 
 

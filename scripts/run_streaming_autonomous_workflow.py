@@ -32,7 +32,9 @@ def main() -> int:
     args = parser.parse_args()
     output_prefix = args.output_prefix
     if not output_prefix:
-        if args.batch_id.startswith("stage2_6e"):
+        if args.batch_id.startswith("stage2_6f"):
+            output_prefix = "stage2_6f_streaming"
+        elif args.batch_id.startswith("stage2_6e"):
             output_prefix = "stage2_6e_streaming"
         elif args.batch_id.startswith("stage2_6d"):
             output_prefix = "stage2_6d_streaming"
