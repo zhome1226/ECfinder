@@ -4,7 +4,6 @@ sources_completed_this_run = 0
 sources_excluded_this_run = 203
 manual_screen_sources = 96
 blocked_external_sources = 1
-skipped_previously_completed_sources = 0
 
 | source_id | status | database | title |
 | --- | --- | --- | --- |

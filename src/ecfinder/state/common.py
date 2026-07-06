@@ -40,7 +40,7 @@ def sha256_file(path: Path) -> str:
 
 
 def normalize_string(value: str) -> str:
-    return value.replace("\r\n", "\\n").replace("\n", "\\n").replace("\r", "\\n")
+    return " ".join(value.replace("\r", " ").replace("\n", " ").split())
 
 
 def normalize_value(value: Any) -> Any:

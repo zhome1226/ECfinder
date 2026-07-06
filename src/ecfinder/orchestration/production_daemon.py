@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from time import monotonic
 from typing import Any
 
-from ecfinder.state.common import read_jsonl, relative_path, write_jsonl
+from ecfinder.state.common import read_json, read_jsonl, relative_path, write_jsonl
 
 from .autonomous_loop import database_record_count, has_unreviewed_candidates, terminal_source_count
 from .checkpointing import checkpoint_due, write_daemon_checkpoint
@@ -270,6 +271,9 @@ class ProductionDaemon(StreamingSupervisor):
         self.fulltext_processed = sum(1 for row in self.status_rows if row.get("fulltext_status") == "found")
         self.extract_sources = sum(1 for row in self.status_rows if row.get("extraction_status") == "done")
         self.deferred_sources = sum(1 for row in self.status_rows if row.get("overall_status") == "deferred")
+        checkpoint = read_json(self.paths.checkpoint)
+        self.checkpoint_count = int(checkpoint.get("checkpoint_count", 0) or 0)
+        self.last_processed_source_id = str(checkpoint.get("last_processed_source_id", "") or "")
 
     def reset_stage2_7_queues(self) -> None:
         for path in [
@@ -308,15 +312,33 @@ class ProductionDaemon(StreamingSupervisor):
             "auxiliary": self.auxiliary_rows,
         }
 
+    def discover_remaining_sources(self) -> DiscoveryResult:
+        status_paths = [self.root / path for path in STAGE2_6_STATUS_PATHS]
+        if (self.root / STAGE2_7_STATUS).exists():
+            status_paths.append(self.root / STAGE2_7_STATUS)
+        decision_paths = [self.root / path for path in STAGE2_6_DECISION_PATHS]
+        stage2_7_decisions = self.root / "data" / "batches" / "stage2_7_screening_decisions.jsonl"
+        if stage2_7_decisions.exists():
+            decision_paths.append(stage2_7_decisions)
+        return discover_runnable_sources(
+            metadata_queue=self.original_metadata_queue,
+            fulltext_manifest=self.root / FULLTEXT_MANIFEST,
+            status_paths=status_paths,
+            decision_paths=decision_paths,
+            output_queue=self.output_queue,
+            audit_report=self.root / "reports" / "stage2_7_runnable_source_audit.md",
+        )
+
     def write_stage2_7_outputs(self, queue: list[dict[str, Any]], ended: str) -> None:
         previous = summarize_previous_progress(self.root, self.stage_status_paths)
         db_records = len(self.validated_rows) + len(self.manual_rows) + len(self.rejected_rows) + len(self.auxiliary_rows)
         duplicate_violations = 0 if self.no_duplicate_reprocessing() else 1
         boundary_violations = len(self.forbidden_validated_records())
-        strict_jsonl = self.strict_jsonl_audit_passed()
+        self.write_stage2_7_queues()
+        strict_jsonl = self.stage2_7_strict_jsonl_audit_passed()
         pending = 0
         sync_ok = not has_unreviewed_candidates(self.candidate_rows, self.reviewed_rows)
-        workflow_success = (
+        workflow_invariants_ok = (
             self.daemon_cycles > 1
             and sync_ok
             and pending == 0
@@ -326,24 +348,41 @@ class ProductionDaemon(StreamingSupervisor):
             and boundary_violations == 0
             and strict_jsonl
         )
+        post_discovery = self.discover_remaining_sources()
+        runnable_after_run = len(post_discovery.runnable_sources)
         safe_stop_triggered = ended != "no_runnable_sources_remain"
-        ready = workflow_success and self.checkpoint_count >= 1 and sync_ok and duplicate_violations == 0 and (safe_stop_triggered or ended == "no_runnable_sources_remain")
-        reason = (
-            "production_daemon_success_but_database_growth_limited_by_missing_fulltext"
-            if workflow_success and (db_records == 0 or sum(1 for row in self.status_rows if row.get("fulltext_status") == "missing") >= sum(1 for row in self.status_rows if row.get("fulltext_status") == "found"))
-            else ("production_daemon_verified_for_unattended_long_run" if ready else "production_daemon_validation_prerequisites_not_met")
-        )
+        no_runnable_sources_remain = runnable_after_run == 0
+        if safe_stop_triggered and runnable_after_run > 0:
+            workflow_status: bool | str = "partial" if workflow_invariants_ok else False
+            ready = False
+            reason = (
+                "safety_limit_reached_before_library_exhausted_and_no_fulltext_extraction_verified"
+                if db_records == 0 and sum(1 for row in self.status_rows if row.get("fulltext_status") == "found") == 0
+                else "safety_limit_reached_before_library_exhausted"
+            )
+        else:
+            workflow_status = workflow_invariants_ok and no_runnable_sources_remain
+            ready = bool(workflow_status) and self.checkpoint_count >= 1 and sync_ok and duplicate_violations == 0
+            reason = (
+                "production_daemon_success_but_database_growth_limited_by_missing_fulltext"
+                if workflow_status
+                and (db_records == 0 or sum(1 for row in self.status_rows if row.get("fulltext_status") == "missing") >= sum(1 for row in self.status_rows if row.get("fulltext_status") == "found"))
+                else ("production_daemon_verified_for_unattended_long_run" if ready else "production_daemon_validation_prerequisites_not_met")
+            )
         discovery = self.discovery
         assert discovery is not None
         self.summary = {
             "batch_id": self.batch_id,
-            "daemon_mode": "until_library_exhausted",
+            "daemon_mode": self.mode,
             "library_total_sources": discovery.library_total_sources,
             "previously_processed_sources": previous["previously_processed_sources"],
             "new_sources_seen": len(self.status_rows),
             "new_sources_screened": len(self.screening_rows),
+            "processed_sources": len(self.status_rows),
+            "screened_sources": len(self.screening_rows),
             "cumulative_sources_screened": previous["previous_sources_screened"] + len(self.screening_rows),
             "runnable_sources_discovered": len(queue),
+            "runnable_sources_discovered_after_run": runnable_after_run,
             "sources_completed_this_run": terminal_source_count(self.status_rows),
             "sources_excluded_this_run": sum(1 for row in self.status_rows if row.get("overall_status") == "excluded"),
             "manual_screen_sources": sum(1 for row in self.status_rows if row.get("overall_status") == "manual_screen"),
@@ -379,12 +418,13 @@ class ProductionDaemon(StreamingSupervisor):
             "checkpoint_count": self.checkpoint_count,
             "safe_stop_triggered": safe_stop_triggered,
             "ended_because": ended,
-            "no_runnable_sources_remain": ended == "no_runnable_sources_remain",
-            "workflow_production_daemon_success": workflow_success,
+            "no_runnable_sources_remain": no_runnable_sources_remain,
+            "workflow_production_daemon_success": workflow_status,
             "ready_for_unattended_long_run": ready,
+            "strict_jsonl_audit_passed": strict_jsonl,
+            "stage2_7_jsonl_strict": strict_jsonl,
             "reason": reason,
         }
-        self.write_stage2_7_queues()
         self.write_stage2_7_reports()
         self.write_checkpoint(ended_because=ended)
 
@@ -410,13 +450,42 @@ class ProductionDaemon(StreamingSupervisor):
             "artifact_refs": row.get("artifact_refs", {}),
         }
 
+    def stage2_7_jsonl_targets(self) -> list[Path]:
+        return [
+            self.paths.screening_decisions,
+            self.paths.chunk_screening,
+            self.paths.candidates,
+            self.paths.reviewed,
+            self.paths.validated,
+            self.paths.manual,
+            self.paths.rejected,
+            self.paths.auxiliary,
+            self.paths.source_status,
+            self.paths.events,
+            self.root / "data" / "state" / "stage2_7_blocked_external_queue.jsonl",
+            self.root / "data" / "state" / "stage2_7_manual_screen_queue.jsonl",
+            self.root / "data" / "state" / "stage2_7_deferred_queue.jsonl",
+            self.root / "data" / "state" / "stage2_7_completed_sources.jsonl",
+        ]
+
+    def stage2_7_strict_jsonl_audit_passed(self) -> bool:
+        try:
+            for path in self.stage2_7_jsonl_targets():
+                self.strict_jsonl_rows(path)
+        except (OSError, ValueError, json.JSONDecodeError):
+            return False
+        return True
+
     def write_stage2_7_reports(self) -> None:
         write_key_value_report(self.paths.summary_report, "Stage 2.7 Production Daemon Summary", self.summary)
         self.write_status_board_report()
         self.write_blocked_report()
         self.write_completed_report()
         self.write_token_budget_report()
+        self.write_skill_invocation_report()
+        self.write_synchronous_review_report()
         self.write_database_report()
+        self.write_stage2_7_strict_jsonl_report()
         self.write_skill_manager_recommendations()
 
     def write_status_board_report(self) -> None:
@@ -471,6 +540,41 @@ class ProductionDaemon(StreamingSupervisor):
         }
         write_key_value_report(self.paths.token_report, "Stage 2.7 Token Budget Audit", values)
 
+    def write_skill_invocation_report(self) -> None:
+        counts: dict[str, int] = {}
+        for event in self.events:
+            skill_id = str(event.get("skill_id", ""))
+            counts[skill_id] = counts.get(skill_id, 0) + 1
+        lines = [
+            "# Stage 2.7 Skill Invocation Audit",
+            "",
+            f"skill_invocation_audit_passed = {str(all(event.get('skill_id') for event in self.events)).lower()}",
+            f"skill_invocations = {len(self.events)}",
+            f"screening_invocations = {sum(1 for event in self.events if event.get('stage') == 'screening')}",
+            f"fulltext_invocations = {sum(1 for event in self.events if event.get('stage') == 'fulltext')}",
+            f"parse_invocations = {sum(1 for event in self.events if event.get('agent') == 'ParseAgent')}",
+            f"extraction_invocations = {sum(1 for event in self.events if event.get('agent') == 'ExtractionAgent')}",
+            f"review_invocations = {sum(1 for event in self.events if event.get('agent') == 'ReviewAgent')}",
+            "",
+        ]
+        lines.extend(f"{skill_id or 'unknown'} = {count}" for skill_id, count in sorted(counts.items()))
+        self.paths.skill_audit_report.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+
+    def write_synchronous_review_report(self) -> None:
+        values = {
+            "candidate_records": len(self.candidate_rows),
+            "reviewed_records": len(self.reviewed_rows),
+            "unreviewed_candidate_records": len(
+                {str(row.get("record_id", "")) for row in self.candidate_rows}
+                - {str(row.get("record_id", "")) for row in self.reviewed_rows}
+            ),
+            "all_candidates_reviewed_synchronously": len(self.candidate_rows) == len(self.reviewed_rows),
+            "database_records_written": self.summary["database_records_written"],
+            "pending_review_tasks": 0,
+            "synchronous_review_audit_passed": len(self.candidate_rows) == len(self.reviewed_rows),
+        }
+        write_key_value_report(self.paths.sync_review_report, "Stage 2.7 Synchronous Review Audit", values)
+
     def write_database_report(self) -> None:
         values = {
             "validated_records": len(self.validated_rows),
@@ -482,6 +586,29 @@ class ProductionDaemon(StreamingSupervisor):
             "all_candidates_reviewed_synchronously": len(self.candidate_rows) == len(self.reviewed_rows),
         }
         write_key_value_report(self.paths.database_report, "Stage 2.7 Database Write Audit", values)
+
+    def write_stage2_7_strict_jsonl_report(self) -> None:
+        lines = [
+            "# Stage 2.7 Strict JSONL Audit",
+            "",
+            "| path | rows | physical_lines | strict_jsonl |",
+            "| --- | ---: | ---: | --- |",
+        ]
+        all_ok = True
+        for path in self.stage2_7_jsonl_targets():
+            try:
+                rows = self.strict_jsonl_rows(path)
+                physical_lines = len(path.read_text(encoding="utf-8").splitlines()) if path.exists() else 0
+                strict = True
+            except (OSError, ValueError, json.JSONDecodeError):
+                rows = 0
+                physical_lines = 0
+                strict = False
+                all_ok = False
+            lines.append(f"| {relative_path(self.root, path)} | {rows} | {physical_lines} | {str(strict).lower()} |")
+        lines.append("")
+        lines.append(f"strict_jsonl_audit_passed = {str(all_ok).lower()}")
+        self.paths.strict_jsonl_report.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
 
     def write_skill_manager_recommendations(self) -> None:
         manual_ratio = (self.summary["manual_screen_sources"] / self.summary["new_sources_screened"]) if self.summary["new_sources_screened"] else 0
@@ -541,6 +668,54 @@ class ProductionDaemon(StreamingSupervisor):
         (self.root / "reports" / "stage2_7_skill_manager_recommendations.md").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
 
 
+def run_discovery_dry_run(
+    root: Path,
+    *,
+    batch_id: str,
+    metadata_queue: Path,
+    library: str,
+    mode: str,
+) -> dict[str, Any]:
+    status_paths = [root / path for path in STAGE2_6_STATUS_PATHS]
+    if (root / STAGE2_7_STATUS).exists():
+        status_paths.append(root / STAGE2_7_STATUS)
+    decision_paths = [root / path for path in STAGE2_6_DECISION_PATHS]
+    stage2_7_decisions = root / "data" / "batches" / "stage2_7_screening_decisions.jsonl"
+    if stage2_7_decisions.exists():
+        decision_paths.append(stage2_7_decisions)
+    discovery = discover_runnable_sources(
+        metadata_queue=metadata_queue,
+        fulltext_manifest=root / FULLTEXT_MANIFEST,
+        status_paths=status_paths,
+        decision_paths=decision_paths,
+        output_queue=root / STAGE2_7_QUEUE,
+        audit_report=root / "reports" / "stage2_7_runnable_source_audit.md",
+    )
+    classified_counts: dict[str, int] = {}
+    for row in discovery.classified_rows:
+        classification = str(row.get("classification", "unknown"))
+        classified_counts[classification] = classified_counts.get(classification, 0) + 1
+    values: dict[str, Any] = {
+        "batch_id": batch_id,
+        "daemon_mode": mode,
+        "library": library,
+        "dry_run_discovery_only": True,
+        "library_total_sources": discovery.library_total_sources,
+        "runnable_sources_remaining": len(discovery.runnable_sources),
+        "blocked_external_sources": classified_counts.get("blocked_external", 0),
+        "manual_screen_sources": classified_counts.get("manual_screen", 0),
+        "completed_sources": classified_counts.get("completed", 0),
+        "excluded_sources": classified_counts.get("excluded", 0),
+        "blocked_sources_rescanned": discovery.blocked_sources_rescanned,
+        "blocked_sources_unblocked": discovery.blocked_sources_unblocked,
+        "new_attachments_found": discovery.new_attachments_found,
+        "would_continue": len(discovery.runnable_sources) > 0,
+        "discovery_dry_run_passed": True,
+    }
+    write_key_value_report(root / "reports" / "stage2_7_daemon_discovery_dry_run.md", "Stage 2.7 Daemon Discovery Dry Run", values)
+    return values
+
+
 def run_production_daemon(
     root: Path,
     *,
@@ -560,7 +735,16 @@ def run_production_daemon(
     token_budget: int | None,
     stop_file: Path | None,
     resume: bool,
+    dry_run_discovery_only: bool = False,
 ) -> dict[str, Any]:
+    if dry_run_discovery_only:
+        return run_discovery_dry_run(
+            root,
+            batch_id=batch_id,
+            metadata_queue=metadata_queue,
+            library=library,
+            mode=mode,
+        )
     daemon = ProductionDaemon(
         root,
         batch_id=batch_id,

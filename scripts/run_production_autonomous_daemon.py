@@ -33,6 +33,7 @@ def main() -> int:
     parser.add_argument("--stop-file", type=Path, default=None)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--metadata-queue", type=Path, default=DEFAULT_METADATA_QUEUE)
+    parser.add_argument("--dry-run-discovery-only", action="store_true")
     args = parser.parse_args()
     metadata_queue = args.metadata_queue if args.metadata_queue.is_absolute() else ROOT / args.metadata_queue
     summary = run_production_daemon(
@@ -53,6 +54,7 @@ def main() -> int:
         token_budget=args.token_budget,
         stop_file=args.stop_file,
         resume=args.resume,
+        dry_run_discovery_only=args.dry_run_discovery_only,
     )
     print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
     return 0

@@ -17,6 +17,7 @@ BATCH = ROOT / "data" / "batches"
 STATE = ROOT / "data" / "state"
 REPORTS = ROOT / "reports"
 SUMMARY = REPORTS / "stage2_7_production_daemon_summary.md"
+DRY_RUN_REPORT = REPORTS / "stage2_7_daemon_discovery_dry_run.md"
 
 STAGE2_7_BATCH_FILES = {
     "screening": BATCH / "stage2_7_screening_decisions.jsonl",
@@ -35,6 +36,31 @@ STAGE2_7_STATE_FILES = {
     "manual_queue": STATE / "stage2_7_manual_screen_queue.jsonl",
     "deferred": STATE / "stage2_7_deferred_queue.jsonl",
     "completed": STATE / "stage2_7_completed_sources.jsonl",
+}
+REQUIRED_REPORT_FIELDS = {
+    "stage2_7_production_daemon_summary.md": {
+        "batch_id",
+        "library_total_sources",
+        "new_sources_screened",
+        "runnable_sources_discovered_after_run",
+        "safe_stop_triggered",
+        "ended_because",
+        "no_runnable_sources_remain",
+        "workflow_production_daemon_success",
+        "ready_for_unattended_long_run",
+        "reason",
+    },
+    "stage2_7_production_daemon_status_board.md": {"source_id", "overall", "next_action"},
+    "stage2_7_runnable_source_audit.md": {"library_total_sources", "runnable_sources_discovered"},
+    "stage2_7_blocked_source_audit.md": {"blocked_external_sources"},
+    "stage2_7_completed_source_audit.md": {"sources_excluded_this_run", "manual_screen_sources"},
+    "stage2_7_token_budget_audit.md": {"screening_cache_hits", "estimated_total_tokens"},
+    "stage2_7_skill_invocation_audit.md": {"skill_invocation_audit_passed", "skill_invocations"},
+    "stage2_7_synchronous_review_audit.md": {"candidate_records", "reviewed_records"},
+    "stage2_7_database_write_audit.md": {"database_records_written"},
+    "stage2_7_strict_jsonl_audit.md": {"strict_jsonl_audit_passed"},
+    "stage2_7_jsonl_serialization_repair_audit.md": {"all_targets_strict_jsonl"},
+    "stage2_7_daemon_discovery_dry_run.md": {"runnable_sources_remaining", "would_continue"},
 }
 FORBIDDEN_VALIDATED = {
     "activated sludge",
@@ -66,7 +92,10 @@ def require(path: Path) -> Path:
 def parse_report(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     pattern = re.compile(r"^([A-Za-z0-9_]+)\s*=\s*(.*?)\s*$")
-    for line in require(path).read_text(encoding="utf-8").splitlines():
+    text = require(path).read_text(encoding="utf-8")
+    if len(text.strip()) == 0:
+        raise ValueError(f"empty report: {path}")
+    for line in text.splitlines():
         match = pattern.match(line)
         if match:
             values[match.group(1)] = match.group(2)
@@ -79,6 +108,10 @@ def as_int(values: dict[str, str], key: str) -> int:
 
 def as_bool(values: dict[str, str], key: str) -> bool:
     return values.get(key, "false") == "true"
+
+
+def report_status(values: dict[str, str], key: str) -> str:
+    return values.get(key, "").strip().lower()
 
 
 def has_raw_newline(value: Any) -> bool:
@@ -131,8 +164,21 @@ def validate_previous_strict_jsonl() -> None:
             strict_jsonl(path)
 
 
+def validate_required_reports() -> None:
+    for name, required_fields in REQUIRED_REPORT_FIELDS.items():
+        path = REPORTS / name
+        text = require(path).read_text(encoding="utf-8")
+        meaningful_lines = [line for line in text.splitlines() if line.strip() and not line.strip().startswith("#")]
+        if len(text.strip()) < 40 or not meaningful_lines:
+            raise ValueError(f"report has no effective audit content: {path}")
+        missing = [field for field in required_fields if field not in text]
+        if missing:
+            raise ValueError(f"report {path} missing required fields: {missing}")
+
+
 def validate_files_and_docs() -> None:
     for path in [
+        ROOT / "scripts" / "repair_stage2_7_jsonl_serialization.py",
         ROOT / "scripts" / "run_production_autonomous_daemon.py",
         ROOT / "src" / "ecfinder" / "orchestration" / "production_daemon.py",
         ROOT / "src" / "ecfinder" / "orchestration" / "runnable_source_discovery.py",
@@ -267,6 +313,8 @@ def validate_report_counts(summary: dict[str, str], rows: dict[str, list[dict[st
     expected = {
         "new_sources_seen": len(rows["status"]),
         "new_sources_screened": len(rows["screening"]),
+        "processed_sources": len(rows["status"]),
+        "screened_sources": len(rows["screening"]),
         "sources_completed_this_run": sum(1 for row in rows["status"] if row.get("overall_status") in {"validated", "rejected", "auxiliary", "completed_no_records"}),
         "sources_excluded_this_run": sum(1 for row in rows["status"] if row.get("overall_status") == "excluded"),
         "manual_screen_sources": sum(1 for row in rows["status"] if row.get("overall_status") == "manual_screen"),
@@ -294,8 +342,26 @@ def validate_report_counts(summary: dict[str, str], rows: dict[str, list[dict[st
         raise ValueError("duplicate work violations must be zero")
     if as_int(summary, "boundary_violations") != 0:
         raise ValueError("boundary violations must be zero")
-    if not as_bool(summary, "workflow_production_daemon_success"):
-        raise ValueError("workflow_production_daemon_success must be true")
+    if as_int(summary, "candidate_records") != as_int(summary, "reviewed_records"):
+        raise ValueError("candidate_records must equal reviewed_records")
+    ended_because = summary.get("ended_because", "")
+    ready = as_bool(summary, "ready_for_unattended_long_run")
+    no_runnable = as_bool(summary, "no_runnable_sources_remain")
+    runnable_after = as_int(summary, "runnable_sources_discovered_after_run")
+    workflow_status = report_status(summary, "workflow_production_daemon_success")
+    if ended_because == "max_new_screen_reached" and ready:
+        raise ValueError("max_new_screen_reached cannot be ready_for_unattended_long_run")
+    if runnable_after > 0 and no_runnable:
+        raise ValueError("runnable sources remain but no_runnable_sources_remain is true")
+    if runnable_after > 0 and ready:
+        raise ValueError("runnable sources remain but ready_for_unattended_long_run is true")
+    if workflow_status not in {"true", "partial"}:
+        raise ValueError("workflow_production_daemon_success must be true or partial")
+    if workflow_status == "partial":
+        if not as_bool(summary, "safe_stop_triggered") or runnable_after <= 0 or ready:
+            raise ValueError("partial workflow status requires safe stop, remaining runnable sources, and ready=false")
+        if summary.get("reason") != "safety_limit_reached_before_library_exhausted_and_no_fulltext_extraction_verified":
+            raise ValueError("partial Stage 2.7 summary has the wrong reason")
     if as_bool(summary, "ready_for_unattended_long_run") and as_int(summary, "checkpoint_count") < 1:
         raise ValueError("ready_for_unattended_long_run requires checkpoint_count >= 1")
 
@@ -305,6 +371,18 @@ def validate_status_board_consistency(status_rows: list[dict[str, Any]]) -> None
     data_lines = [line for line in board if line.startswith("| ") and not line.startswith("| ---") and "source_id" not in line]
     if len(data_lines) != len(status_rows):
         raise ValueError("status board row count does not match source status JSONL")
+
+
+def validate_discovery_dry_run(summary: dict[str, str]) -> None:
+    dry_run = parse_report(DRY_RUN_REPORT)
+    remaining = as_int(dry_run, "runnable_sources_remaining")
+    would_continue = as_bool(dry_run, "would_continue")
+    if remaining > 0 and not would_continue:
+        raise ValueError("dry-run discovery found runnable sources but would_continue is false")
+    if remaining == 0 and would_continue:
+        raise ValueError("dry-run discovery found no runnable sources but would_continue is true")
+    if remaining != as_int(summary, "runnable_sources_discovered_after_run"):
+        raise ValueError("dry-run remaining runnable count does not match summary runnable_sources_discovered_after_run")
 
 
 def validate_no_raw_fulltext_tracked() -> None:
@@ -323,6 +401,7 @@ def main() -> int:
     validate_previous_strict_jsonl()
     rows = load_stage2_7()
     summary = parse_report(SUMMARY)
+    validate_required_reports()
     validate_no_duplicate_completed_reprocessing(rows["status"])
     validate_status_logic(rows)
     validate_context_and_events(rows)
@@ -330,11 +409,13 @@ def main() -> int:
     validate_boundaries(rows["validated"])
     validate_report_counts(summary, rows)
     validate_status_board_consistency(rows["status"])
+    validate_discovery_dry_run(summary)
     validate_no_raw_fulltext_tracked()
     output = {
         "new_sources_screened": as_int(summary, "new_sources_screened"),
         "ready_for_unattended_long_run": as_bool(summary, "ready_for_unattended_long_run"),
-        "workflow_production_daemon_success": as_bool(summary, "workflow_production_daemon_success"),
+        "runnable_sources_discovered_after_run": as_int(summary, "runnable_sources_discovered_after_run"),
+        "workflow_production_daemon_success": summary.get("workflow_production_daemon_success", ""),
     }
     print(json.dumps(output, ensure_ascii=False, sort_keys=True))
     return 0
