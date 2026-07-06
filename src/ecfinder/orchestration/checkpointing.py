@@ -11,6 +11,7 @@ from ecfinder.state.common import utc_now, write_json
 def write_daemon_checkpoint(
     root: Path,
     *,
+    checkpoint_path: Path | None = None,
     batch_id: str,
     last_processed_source_id: str,
     processed_sources: int,
@@ -27,7 +28,7 @@ def write_daemon_checkpoint(
     ended_because: str,
 ) -> None:
     write_json(
-        root / "data" / "state" / "stage2_7_daemon_checkpoint.json",
+        checkpoint_path or (root / "data" / "state" / "stage2_7_daemon_checkpoint.json"),
         {
             "batch_id": batch_id,
             "blocked_external_sources": blocked_external_sources,

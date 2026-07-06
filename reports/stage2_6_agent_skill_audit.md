@@ -13,4 +13,6 @@
 | ReviewAgent | skill | true | false | low | Registered active skill. |
 | DatabaseWriteAgent | skill | true | false | low | Registered active skill. |
 | SupervisorAgent | skill | true | false | low | Registered active skill. |
+| ExternalSearchAgent | skill | true | false | low | Registered active skill. |
+| ExternalDownloadAgent | skill | true | false | low | Registered active skill. |
 | SkillManagerAgent | skill | true | false | low | Registered active skill. |

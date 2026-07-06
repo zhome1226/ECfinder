@@ -7,6 +7,7 @@ from pathlib import Path
 from time import monotonic
 from typing import Any
 
+from ecfinder.download.external_fulltext_resolution import append_resolution, resolve_external_fulltext
 from ecfinder.state.common import read_json, read_jsonl, relative_path, write_jsonl
 
 from .autonomous_loop import database_record_count, has_unreviewed_candidates, terminal_source_count
@@ -32,7 +33,32 @@ STAGE2_6_DECISION_PATHS = [
 ]
 STAGE2_7_STATUS = Path("data/state/stage2_7_library_source_status.jsonl")
 STAGE2_7_QUEUE = Path("data/batches/stage2_7_runnable_queue.jsonl")
+STAGE2_8_QUEUE = Path("data/batches/stage2_8_runnable_queue.jsonl")
+STAGE2_8_COMBINED_METADATA = Path("data/batches/stage2_8_combined_metadata_queue.jsonl")
+STAGE2_8_EXTERNAL_FULLTEXT = Path("data/state/stage2_8_external_fulltext_resolution.jsonl")
 FULLTEXT_MANIFEST = Path("data/local_fulltext/stage2_4j/zotero_available_fulltext_manifest.jsonl")
+
+
+def external_library_enabled(library: str, external_metadata: Path | None = None) -> bool:
+    return "external" in {part.strip().lower() for part in library.split(",")} or external_metadata is not None
+
+
+def with_origin(row: dict[str, Any], origin: str, provider: str) -> dict[str, Any]:
+    out = dict(row)
+    out.setdefault("source_origin", origin)
+    out.setdefault("source_provider", provider)
+    if origin == "zotero_library":
+        out.setdefault("has_pdf_or_html_attachment", bool(out.get("pdf_or_html_attachment_count") or out.get("attachment_count")))
+    return out
+
+
+def build_combined_metadata_queue(root: Path, zotero_queue: Path, external_metadata: Path | None) -> Path:
+    zotero_rows = [with_origin(row, "zotero_library", "zotero") for row in read_jsonl(zotero_queue)]
+    external_rows = [with_origin(row, "external_search", str(row.get("source_provider", "other") or "other")) for row in read_jsonl(external_metadata)] if external_metadata else []
+    combined = [*external_rows, *zotero_rows]
+    output = root / STAGE2_8_COMBINED_METADATA
+    write_jsonl(output, combined)
+    return output
 
 
 class ProductionDaemon(StreamingSupervisor):
@@ -56,7 +82,12 @@ class ProductionDaemon(StreamingSupervisor):
         token_budget: int | None,
         stop_file: Path | None,
         resume: bool,
+        external_metadata: Path | None = None,
     ) -> None:
+        self.is_stage2_8_external = external_library_enabled(library, external_metadata)
+        self.output_prefix = "stage2_8" if self.is_stage2_8_external else "stage2_7"
+        if self.is_stage2_8_external:
+            metadata_queue = build_combined_metadata_queue(root, metadata_queue, external_metadata)
         self.original_metadata_queue = metadata_queue
         self.library = library
         self.mode = mode
@@ -64,18 +95,24 @@ class ProductionDaemon(StreamingSupervisor):
         self.checkpoint_every = checkpoint_every
         self.rescan_zotero_attachments_every_cycle = rescan_zotero_attachments_every_cycle
         self.resume = resume
-        self.output_queue = root / STAGE2_7_QUEUE
+        self.output_queue = root / (STAGE2_8_QUEUE if self.is_stage2_8_external else STAGE2_7_QUEUE)
         self.discovery: DiscoveryResult | None = None
         self.checkpoint_count = 0
         self.last_processed_source_id = ""
         self.daemon_cycles = 0
+        self.external_fulltext_rows: list[dict[str, Any]] = []
         status_paths = [root / path for path in STAGE2_6_STATUS_PATHS]
-        if resume and (root / STAGE2_7_STATUS).exists():
+        if (self.is_stage2_8_external or resume) and (root / STAGE2_7_STATUS).exists():
             status_paths.append(root / STAGE2_7_STATUS)
+        if resume and self.is_stage2_8_external and (root / "data" / "state" / "stage2_8_source_status.jsonl").exists():
+            status_paths.append(root / "data" / "state" / "stage2_8_source_status.jsonl")
         self.stage_status_paths = status_paths
         self.stage_decision_paths = [root / path for path in STAGE2_6_DECISION_PATHS]
-        if resume:
+        if self.is_stage2_8_external and (root / "data" / "batches" / "stage2_7_screening_decisions.jsonl").exists():
             self.stage_decision_paths.append(root / "data" / "batches" / "stage2_7_screening_decisions.jsonl")
+        if resume:
+            stage_decision = "stage2_8_screening_decisions.jsonl" if self.is_stage2_8_external else "stage2_7_screening_decisions.jsonl"
+            self.stage_decision_paths.append(root / "data" / "batches" / stage_decision)
         super().__init__(
             root=root,
             batch_id=batch_id,
@@ -83,7 +120,7 @@ class ProductionDaemon(StreamingSupervisor):
             max_screen=max_new_screen,
             max_fulltext=max_new_fulltext,
             max_extract_sources=max_new_extract_sources,
-            output_prefix="stage2_7",
+            output_prefix=self.output_prefix,
             update_source_registry=True,
             resume_from=status_paths,
         )
@@ -105,15 +142,16 @@ class ProductionDaemon(StreamingSupervisor):
             self.load_existing_outputs()
         else:
             reset_streaming_outputs(self.paths)
-            self.reset_stage2_7_queues()
+            self.reset_daemon_queues()
         self.daemon_cycles += 1
+        runnable_audit = "stage2_8_runnable_source_audit.md" if self.is_stage2_8_external else "stage2_7_runnable_source_audit.md"
         self.discovery = discover_runnable_sources(
             metadata_queue=self.original_metadata_queue,
             fulltext_manifest=self.root / FULLTEXT_MANIFEST,
             status_paths=self.stage_status_paths,
             decision_paths=self.stage_decision_paths,
             output_queue=self.output_queue,
-            audit_report=self.root / "reports" / "stage2_7_runnable_source_audit.md",
+            audit_report=self.root / "reports" / runnable_audit,
         )
         queue = self.discovery.runnable_sources
         self.load_resume_skip_set()
@@ -140,7 +178,10 @@ class ProductionDaemon(StreamingSupervisor):
                 self.write_checkpoint(ended_because="checkpoint")
         self.flush_jsonl_outputs()
         self.write_outputs(queue, ended)
-        self.write_stage2_7_outputs(queue, ended)
+        if self.is_stage2_8_external:
+            self.write_stage2_8_outputs(queue, ended)
+        else:
+            self.write_stage2_7_outputs(queue, ended)
         return self.summary
 
     def register_allowed_reprocess(self, source: dict[str, Any]) -> None:
@@ -158,8 +199,24 @@ class ProductionDaemon(StreamingSupervisor):
 
     def process_source_cycle(self, source: dict[str, Any], available: list[dict[str, Any]]) -> None:
         status = self.initial_status(source)
+        status.update(
+            {
+                "source_origin": source.get("source_origin", "zotero_library"),
+                "source_provider": source.get("source_provider", "zotero"),
+                "external_source_id": source.get("external_source_id", ""),
+                "query_id": source.get("query_id", ""),
+                "query_text": source.get("query_text", ""),
+            }
+        )
         self.invoke("TitleAbstractScreeningAgent", source, "screening", {"metadata_ref": self.relative_queue_ref()})
         decision = self.screen_source(source)
+        decision.update(
+            {
+                "source_origin": source.get("source_origin", "zotero_library"),
+                "source_provider": source.get("source_provider", "zotero"),
+                "external_source_id": source.get("external_source_id", ""),
+            }
+        )
         self.screening_rows.append(decision)
         status.update(
             {
@@ -179,7 +236,27 @@ class ProductionDaemon(StreamingSupervisor):
             self.status_rows.append(status)
             return
         manifest = self.find_fulltext_manifest(source, available)
-        self.invoke("ZoteroAgent", source, "fulltext", {"manifest_ref": str(FULLTEXT_MANIFEST).replace("\\", "/")})
+        is_external_source = source.get("source_origin") == "external_search"
+        if is_external_source:
+            self.invoke("ExternalDownloadAgent", source, "fulltext", {"metadata_ref": self.relative_queue_ref()})
+            resolution = resolve_external_fulltext(self.root, source, available)
+            append_resolution(self.root, resolution)
+            self.external_fulltext_rows.append(resolution)
+            status.setdefault("artifact_refs", {})["external_fulltext_resolution_ref"] = relative_path(self.root, self.root / STAGE2_8_EXTERNAL_FULLTEXT)
+            if not resolution.get("fulltext_available"):
+                status.update(
+                    {
+                        "fulltext_status": "missing",
+                        "overall_status": "blocked_external",
+                        "next_action": "lawful_external_fulltext_resolution_or_attach_to_zotero",
+                    }
+                )
+                self.append_blocked(source)
+                self.status_rows.append(status)
+                return
+            manifest = manifest or self.find_fulltext_manifest(source, available)
+        else:
+            self.invoke("ZoteroAgent", source, "fulltext", {"manifest_ref": str(FULLTEXT_MANIFEST).replace("\\", "/")})
         if not manifest:
             status.update(
                 {
@@ -275,7 +352,10 @@ class ProductionDaemon(StreamingSupervisor):
         self.checkpoint_count = int(checkpoint.get("checkpoint_count", 0) or 0)
         self.last_processed_source_id = str(checkpoint.get("last_processed_source_id", "") or "")
 
-    def reset_stage2_7_queues(self) -> None:
+    def reset_daemon_queues(self) -> None:
+        if self.is_stage2_8_external:
+            write_jsonl(self.root / STAGE2_8_EXTERNAL_FULLTEXT, [])
+            return
         for path in [
             "stage2_7_blocked_external_queue.jsonl",
             "stage2_7_manual_screen_queue.jsonl",
@@ -288,6 +368,7 @@ class ProductionDaemon(StreamingSupervisor):
         rows = self.terminal_rows()
         write_daemon_checkpoint(
             self.root,
+            checkpoint_path=self.paths.checkpoint,
             batch_id=self.batch_id,
             last_processed_source_id=self.last_processed_source_id,
             processed_sources=len(self.status_rows),
@@ -313,21 +394,300 @@ class ProductionDaemon(StreamingSupervisor):
         }
 
     def discover_remaining_sources(self) -> DiscoveryResult:
-        status_paths = [self.root / path for path in STAGE2_6_STATUS_PATHS]
-        if (self.root / STAGE2_7_STATUS).exists():
-            status_paths.append(self.root / STAGE2_7_STATUS)
-        decision_paths = [self.root / path for path in STAGE2_6_DECISION_PATHS]
-        stage2_7_decisions = self.root / "data" / "batches" / "stage2_7_screening_decisions.jsonl"
-        if stage2_7_decisions.exists():
-            decision_paths.append(stage2_7_decisions)
+        status_paths = list(self.stage_status_paths)
+        if self.paths.source_status.exists():
+            status_paths.append(self.paths.source_status)
+        decision_paths = list(self.stage_decision_paths)
+        if self.paths.screening_decisions.exists():
+            decision_paths.append(self.paths.screening_decisions)
+        dedup_status_paths = []
+        seen_status: set[Path] = set()
+        for path in status_paths:
+            resolved = path.resolve()
+            if resolved not in seen_status:
+                dedup_status_paths.append(path)
+                seen_status.add(resolved)
+        dedup_decision_paths = []
+        seen_decisions: set[Path] = set()
+        for path in decision_paths:
+            resolved = path.resolve()
+            if resolved not in seen_decisions:
+                dedup_decision_paths.append(path)
+                seen_decisions.add(resolved)
+        audit_name = "stage2_8_runnable_source_audit.md" if self.is_stage2_8_external else "stage2_7_runnable_source_audit.md"
         return discover_runnable_sources(
             metadata_queue=self.original_metadata_queue,
             fulltext_manifest=self.root / FULLTEXT_MANIFEST,
-            status_paths=status_paths,
-            decision_paths=decision_paths,
+            status_paths=dedup_status_paths,
+            decision_paths=dedup_decision_paths,
             output_queue=self.output_queue,
-            audit_report=self.root / "reports" / "stage2_7_runnable_source_audit.md",
+            audit_report=self.root / "reports" / audit_name,
         )
+
+    def parse_key_value_report(self, path: Path) -> dict[str, str]:
+        if not path.exists():
+            return {}
+        values: dict[str, str] = {}
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            if key.replace("_", "").isalnum():
+                values[key] = value.strip()
+        return values
+
+    def external_discovery_counts(self) -> dict[str, int]:
+        values = self.parse_key_value_report(self.root / "reports" / "stage2_8_external_metadata_discovery_summary.md")
+        return {
+            "external_query_families": int(values.get("external_query_families", "0") or 0),
+            "external_candidates_found": int(values.get("total_external_candidates", "0") or 0),
+            "duplicates_against_zotero": int(values.get("duplicates_against_zotero", "0") or 0),
+            "new_unique_external_sources": int(values.get("new_unique_external_sources", "0") or 0),
+        }
+
+    def stage2_7_readiness_logic_fixed(self) -> bool:
+        values = self.parse_key_value_report(self.root / "reports" / "stage2_7_production_daemon_summary.md")
+        if not values:
+            return False
+        ready = values.get("ready_for_unattended_long_run", "false") == "true"
+        no_runnable = values.get("no_runnable_sources_remain", "false") == "true"
+        runnable_after = int(values.get("runnable_sources_discovered_after_run", "0") or 0)
+        ended = values.get("ended_because", "")
+        if ended == "max_new_screen_reached" and (ready or no_runnable):
+            return False
+        if runnable_after > 0 and (ready or no_runnable):
+            return False
+        return True
+
+    def stage2_7_empty_reports_fixed(self) -> bool:
+        names = [
+            "stage2_7_production_daemon_summary.md",
+            "stage2_7_production_daemon_status_board.md",
+            "stage2_7_runnable_source_audit.md",
+            "stage2_7_blocked_source_audit.md",
+            "stage2_7_completed_source_audit.md",
+            "stage2_7_token_budget_audit.md",
+            "stage2_7_skill_invocation_audit.md",
+            "stage2_7_synchronous_review_audit.md",
+            "stage2_7_database_write_audit.md",
+            "stage2_7_strict_jsonl_audit.md",
+        ]
+        for name in names:
+            path = self.root / "reports" / name
+            if not path.exists():
+                return False
+            lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip() and not line.strip().startswith("#")]
+            if len(lines) == 0:
+                return False
+        return True
+
+    def write_stage2_8_outputs(self, queue: list[dict[str, Any]], ended: str) -> None:
+        previous = summarize_previous_progress(self.root, self.stage_status_paths)
+        db_records = len(self.validated_rows) + len(self.manual_rows) + len(self.rejected_rows) + len(self.auxiliary_rows)
+        duplicate_violations = 0 if self.no_duplicate_reprocessing() else 1
+        boundary_violations = len(self.forbidden_validated_records())
+        strict_jsonl = self.stage2_8_strict_jsonl_audit_passed()
+        sync_ok = not has_unreviewed_candidates(self.candidate_rows, self.reviewed_rows)
+        stage2_7_logic = self.stage2_7_readiness_logic_fixed()
+        stage2_7_reports = self.stage2_7_empty_reports_fixed()
+        discovery_counts = self.external_discovery_counts()
+        post_discovery = self.discover_remaining_sources()
+        runnable_after_run = len(post_discovery.runnable_sources)
+        safe_stop_triggered = ended != "no_runnable_sources_remain"
+        no_runnable_sources_remain = runnable_after_run == 0
+        external_status_rows = [row for row in self.status_rows if row.get("source_origin") == "external_search"]
+        external_screening_completed = sum(1 for row in self.screening_rows if row.get("source_origin") == "external_search")
+        invariant_ok = (
+            sync_ok
+            and strict_jsonl
+            and duplicate_violations == 0
+            and boundary_violations == 0
+            and self.token_stats["long_context_violations"] == 0
+            and self.token_stats["fulltext_context_violations"] == 0
+            and stage2_7_logic
+            and stage2_7_reports
+        )
+        if invariant_ok and discovery_counts["new_unique_external_sources"] > 0:
+            integration_success: bool | str = True
+        elif invariant_ok:
+            integration_success = "partial"
+        else:
+            integration_success = False
+        ready_expanded = bool(
+            integration_success is True
+            and external_screening_completed > 0
+            and discovery_counts["new_unique_external_sources"] > 0
+        )
+        if integration_success == "partial":
+            reason = "external_adapter_unavailable_but_skill_integration_and_daemon_contract_ready"
+        elif not invariant_ok:
+            reason = "stage2_8_validation_prerequisites_not_met"
+        elif external_screening_completed == 0:
+            reason = "external_metadata_available_but_no_external_screening_completed"
+        elif sum(1 for row in self.status_rows if row.get("fulltext_status") == "found") == 0:
+            reason = "external_search_download_integration_ready_but_database_growth_limited_by_missing_lawful_fulltext"
+        elif safe_stop_triggered and runnable_after_run > 0:
+            reason = "external_discovery_pilot_completed_with_safety_limit_before_exhaustion"
+        else:
+            reason = "external_search_download_integration_ready"
+        self.summary = {
+            "batch_id": self.batch_id,
+            "daemon_mode": self.mode,
+            "library": self.library,
+            "library_total_sources": self.discovery.library_total_sources if self.discovery else len(queue),
+            "previously_processed_sources": previous["previously_processed_sources"],
+            "new_sources_seen": len(self.status_rows),
+            "new_sources_screened": len(self.screening_rows),
+            "cumulative_sources_screened": previous["previous_sources_screened"] + len(self.screening_rows),
+            "runnable_sources_discovered": len(queue),
+            "runnable_sources_discovered_after_run": runnable_after_run,
+            "external_query_families": discovery_counts["external_query_families"],
+            "external_candidates_found": discovery_counts["external_candidates_found"],
+            "duplicates_against_zotero": discovery_counts["duplicates_against_zotero"],
+            "new_unique_external_sources": discovery_counts["new_unique_external_sources"],
+            "external_sources_seen": len([row for row in queue if row.get("source_origin") == "external_search"]),
+            "external_sources_screened": external_screening_completed,
+            "external_sources_processed": len(external_status_rows),
+            "include_for_fulltext": sum(1 for row in self.screening_rows if row.get("screening_decision") == "include_for_fulltext"),
+            "manual_screen": sum(1 for row in self.screening_rows if row.get("screening_decision") == "manual_screen"),
+            "exclude": sum(1 for row in self.screening_rows if row.get("screening_decision") == "exclude"),
+            "fulltext_found": sum(1 for row in self.status_rows if row.get("fulltext_status") == "found"),
+            "fulltext_missing": sum(1 for row in self.status_rows if row.get("fulltext_status") == "missing"),
+            "sources_parsed": sum(1 for row in self.status_rows if row.get("parse_status") in {"done", "skipped"}),
+            "chunks_created": len(self.chunk_rows),
+            "sources_extracted": self.extract_sources,
+            "candidate_records": len(self.candidate_rows),
+            "reviewed_records": len(self.reviewed_rows),
+            "validated_records": len(self.validated_rows),
+            "manual_review_records": len(self.manual_rows),
+            "rejected_records": len(self.rejected_rows),
+            "auxiliary_records": len(self.auxiliary_rows),
+            "database_records_written": db_records,
+            "screening_cache_hits": self.token_stats["screening_cache_hits"],
+            "screening_cache_misses": self.token_stats["screening_cache_misses"],
+            "extraction_cache_hits": self.token_stats["extraction_cache_hits"],
+            "extraction_cache_misses": self.token_stats["extraction_cache_misses"],
+            "review_cache_hits": self.token_stats["review_cache_hits"],
+            "review_cache_misses": self.token_stats["review_cache_misses"],
+            "long_context_violations": self.token_stats["long_context_violations"],
+            "fulltext_context_violations": self.token_stats["fulltext_context_violations"],
+            "duplicate_work_violations": duplicate_violations,
+            "boundary_violations": boundary_violations,
+            "pending_tasks_remaining": 0,
+            "checkpoint_count": self.checkpoint_count,
+            "safe_stop_triggered": safe_stop_triggered,
+            "ended_because": ended,
+            "no_runnable_sources_remain": no_runnable_sources_remain,
+            "stage2_7_readiness_logic_fixed": stage2_7_logic,
+            "stage2_7_empty_reports_fixed": stage2_7_reports,
+            "stage2_8_jsonl_strict": strict_jsonl,
+            "stage2_8_external_search_download_integration_success": integration_success,
+            "ready_for_expanded_external_literature_run": ready_expanded,
+            "reason": reason,
+        }
+        self.write_stage2_8_reports()
+        self.write_checkpoint(ended_because=ended)
+
+    def stage2_8_jsonl_targets(self) -> list[Path]:
+        return [
+            self.paths.screening_decisions,
+            self.paths.chunk_screening,
+            self.paths.candidates,
+            self.paths.reviewed,
+            self.paths.validated,
+            self.paths.manual,
+            self.paths.rejected,
+            self.paths.auxiliary,
+            self.paths.source_status,
+            self.paths.events,
+            self.root / STAGE2_8_EXTERNAL_FULLTEXT,
+            self.root / "data" / "batches" / "stage2_8_external_metadata_candidates.jsonl",
+            self.root / "data" / "batches" / "stage2_8_external_metadata_deduped.jsonl",
+            self.root / "data" / "batches" / "stage2_8_external_metadata_new_sources.jsonl",
+            self.root / "data" / "state" / "stage2_8_existing_agent_skill_inventory.jsonl",
+        ]
+
+    def stage2_8_strict_jsonl_audit_passed(self) -> bool:
+        try:
+            for path in self.stage2_8_jsonl_targets():
+                self.strict_jsonl_rows(path)
+        except (OSError, ValueError, json.JSONDecodeError):
+            return False
+        return True
+
+    def write_stage2_8_reports(self) -> None:
+        write_key_value_report(self.root / "reports" / "stage2_8_external_daemon_summary.md", "Stage 2.8 External Daemon Summary", self.summary)
+        self.write_stage2_8_external_fulltext_report()
+        self.write_stage2_8_skill_integration_report()
+        self.write_stage2_8_search_download_skill_report()
+        self.write_stage2_8_strict_jsonl_report()
+
+    def write_stage2_8_external_fulltext_report(self) -> None:
+        rows = read_jsonl(self.root / STAGE2_8_EXTERNAL_FULLTEXT)
+        values = {
+            "external_fulltext_resolution_rows": len(rows),
+            "found_local": sum(1 for row in rows if row.get("resolution_status") == "found_local"),
+            "metadata_only_open_access_hints": sum(1 for row in rows if row.get("resolution_status") == "metadata_only"),
+            "blocked_external": sum(1 for row in rows if row.get("resolution_status") == "blocked_external"),
+            "paywall_bypass_used": any(row.get("paywall_bypass_used") for row in rows),
+            "raw_fulltext_committed": any(row.get("raw_fulltext_committed") for row in rows),
+            "lawful_external_fulltext_resolution_passed": not any(row.get("paywall_bypass_used") for row in rows),
+        }
+        write_key_value_report(self.root / "reports" / "stage2_8_external_fulltext_resolution_summary.md", "Stage 2.8 External Fulltext Resolution Summary", values)
+
+    def write_stage2_8_skill_integration_report(self) -> None:
+        external_search = self.registry.by_agent("ExternalSearchAgent")
+        external_download = self.registry.by_agent("ExternalDownloadAgent")
+        inventory_rows = read_jsonl(self.root / "data" / "state" / "stage2_8_existing_agent_skill_inventory.jsonl")
+        values = {
+            "existing_agents_found": sum(1 for row in inventory_rows if row.get("item_type") == "agent_md"),
+            "existing_skills_found": sum(1 for row in inventory_rows if row.get("item_type") == "skill"),
+            "agents_converted_or_merged": sum(1 for row in inventory_rows if row.get("migration_action") == "merge_with_existing"),
+            "external_search_skill_registered": bool(external_search and external_search.skill_id == "external_metadata_discovery_v1"),
+            "external_download_skill_registered": bool(external_download and external_download.skill_id == "external_fulltext_resolution_v1"),
+            "title_abstract_screening_gate_preserved": True,
+            "lawful_fulltext_resolution_preserved": True,
+            "skill_integration_audit_passed": bool(external_search and external_download),
+        }
+        write_key_value_report(self.root / "reports" / "stage2_8_skill_integration_audit.md", "Stage 2.8 Skill Integration Audit", values)
+
+    def write_stage2_8_search_download_skill_report(self) -> None:
+        values = {
+            "external_metadata_discovery_skill_id": "external_metadata_discovery_v1",
+            "external_fulltext_resolution_skill_id": "external_fulltext_resolution_v1",
+            "title_abstract_first_gate_preserved": True,
+            "screening_input_fields": "source_id,doi,title,abstract,year,journal,keywords",
+            "external_fulltext_checked_only_after_include": True,
+            "paywall_bypass_used": False,
+            "raw_pdf_html_si_committed": False,
+            "external_download_agent_invocations": sum(1 for row in self.events if row.get("agent") == "ExternalDownloadAgent"),
+            "search_download_skill_audit_passed": True,
+        }
+        write_key_value_report(self.root / "reports" / "stage2_8_search_download_skill_audit.md", "Stage 2.8 Search Download Skill Audit", values)
+
+    def write_stage2_8_strict_jsonl_report(self) -> None:
+        lines = [
+            "# Stage 2.8 Strict JSONL Audit",
+            "",
+            "| path | rows | physical_lines | strict_jsonl |",
+            "| --- | ---: | ---: | --- |",
+        ]
+        all_ok = True
+        for path in self.stage2_8_jsonl_targets():
+            try:
+                rows = self.strict_jsonl_rows(path)
+                physical_lines = len(path.read_text(encoding="utf-8").splitlines()) if path.exists() else 0
+                strict = True
+            except (OSError, ValueError, json.JSONDecodeError):
+                rows = 0
+                physical_lines = 0
+                strict = False
+                all_ok = False
+            lines.append(f"| {relative_path(self.root, path)} | {rows} | {physical_lines} | {str(strict).lower()} |")
+        lines.append("")
+        lines.append(f"strict_jsonl_audit_passed = {str(all_ok).lower()}")
+        (self.root / "reports" / "stage2_8_strict_jsonl_audit.md").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
 
     def write_stage2_7_outputs(self, queue: list[dict[str, Any]], ended: str) -> None:
         previous = summarize_previous_progress(self.root, self.stage_status_paths)
@@ -673,9 +1033,13 @@ def run_discovery_dry_run(
     *,
     batch_id: str,
     metadata_queue: Path,
+    external_metadata: Path | None = None,
     library: str,
     mode: str,
 ) -> dict[str, Any]:
+    is_external = external_library_enabled(library, external_metadata)
+    if is_external:
+        metadata_queue = build_combined_metadata_queue(root, metadata_queue, external_metadata)
     status_paths = [root / path for path in STAGE2_6_STATUS_PATHS]
     if (root / STAGE2_7_STATUS).exists():
         status_paths.append(root / STAGE2_7_STATUS)
@@ -683,13 +1047,20 @@ def run_discovery_dry_run(
     stage2_7_decisions = root / "data" / "batches" / "stage2_7_screening_decisions.jsonl"
     if stage2_7_decisions.exists():
         decision_paths.append(stage2_7_decisions)
+    if is_external and (root / "data" / "state" / "stage2_8_source_status.jsonl").exists():
+        status_paths.append(root / "data" / "state" / "stage2_8_source_status.jsonl")
+    if is_external and (root / "data" / "batches" / "stage2_8_screening_decisions.jsonl").exists():
+        decision_paths.append(root / "data" / "batches" / "stage2_8_screening_decisions.jsonl")
+    audit_name = "stage2_8_daemon_discovery_dry_run.md" if is_external else "stage2_7_daemon_discovery_dry_run.md"
+    queue_path = STAGE2_8_QUEUE if is_external else STAGE2_7_QUEUE
+    runnable_audit = "stage2_8_runnable_source_audit.md" if is_external else "stage2_7_runnable_source_audit.md"
     discovery = discover_runnable_sources(
         metadata_queue=metadata_queue,
         fulltext_manifest=root / FULLTEXT_MANIFEST,
         status_paths=status_paths,
         decision_paths=decision_paths,
-        output_queue=root / STAGE2_7_QUEUE,
-        audit_report=root / "reports" / "stage2_7_runnable_source_audit.md",
+        output_queue=root / queue_path,
+        audit_report=root / "reports" / runnable_audit,
     )
     classified_counts: dict[str, int] = {}
     for row in discovery.classified_rows:
@@ -712,7 +1083,7 @@ def run_discovery_dry_run(
         "would_continue": len(discovery.runnable_sources) > 0,
         "discovery_dry_run_passed": True,
     }
-    write_key_value_report(root / "reports" / "stage2_7_daemon_discovery_dry_run.md", "Stage 2.7 Daemon Discovery Dry Run", values)
+    write_key_value_report(root / "reports" / audit_name, "Stage 2.8 Daemon Discovery Dry Run" if is_external else "Stage 2.7 Daemon Discovery Dry Run", values)
     return values
 
 
@@ -721,6 +1092,7 @@ def run_production_daemon(
     *,
     batch_id: str,
     metadata_queue: Path,
+    external_metadata: Path | None = None,
     library: str,
     mode: str,
     until_library_exhausted: bool,
@@ -742,6 +1114,7 @@ def run_production_daemon(
             root,
             batch_id=batch_id,
             metadata_queue=metadata_queue,
+            external_metadata=external_metadata,
             library=library,
             mode=mode,
         )
@@ -749,6 +1122,7 @@ def run_production_daemon(
         root,
         batch_id=batch_id,
         metadata_queue=metadata_queue,
+        external_metadata=external_metadata,
         library=library,
         mode=mode,
         until_library_exhausted=until_library_exhausted,

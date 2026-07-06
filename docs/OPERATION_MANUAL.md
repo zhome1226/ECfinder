@@ -34,6 +34,34 @@ python scripts/run_production_autonomous_daemon.py `
 
 The daemon writes progress to `data/state/stage2_7_daemon_checkpoint.json` and audit reports under `reports/stage2_7_*`.
 
+## External Discovery Pilot
+
+Run the Stage 2.8 external metadata pilot before scaling beyond the local Zotero library:
+
+```powershell
+python scripts/run_stage2_8_external_metadata_discovery.py `
+  --queries configs/stage2_8_external_search_queries.yaml `
+  --max-results-per-query 20 `
+  --max-candidates 300 `
+  --max-new-sources 100
+
+python scripts/run_production_autonomous_daemon.py `
+  --library zotero,external `
+  --external-metadata data/batches/stage2_8_external_metadata_new_sources.jsonl `
+  --mode title_abstract_to_database `
+  --until-library-exhausted `
+  --checkpoint-every 25 `
+  --rescan-zotero-attachments-every-cycle `
+  --max-wall-minutes 120 `
+  --max-new-screen 100 `
+  --max-new-fulltext 30 `
+  --max-new-extract-sources 15 `
+  --safe-stop-on-token-budget `
+  --token-budget 250000
+```
+
+The external pilot writes metadata and audit artifacts under `data/batches/stage2_8_*`, `data/state/stage2_8_*`, and `reports/stage2_8_*`. It must keep screening metadata-only and must not download or commit paywalled full text.
+
 ## Stop And Resume
 
 To request a safe stop, create:
@@ -69,6 +97,7 @@ Then run:
 
 ```powershell
 python scripts/validate_stage2_7_production_daemon.py
+python scripts/validate_stage2_8_external_search_download_integration.py
 python scripts/validate_stage2_6f_environment_priority_streaming.py
 python scripts/validate_stage2_6e_attachment_priority_streaming.py
 python scripts/validate_stage2_6d_streaming_workflow.py

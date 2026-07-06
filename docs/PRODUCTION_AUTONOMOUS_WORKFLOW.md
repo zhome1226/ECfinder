@@ -21,6 +21,34 @@ python scripts/run_production_autonomous_daemon.py `
 
 The limits are safety budgets. They do not change the daemon model: each cycle discovers runnable sources, chooses the next source, completes that source's current workflow cycle, writes state, and then decides whether to continue.
 
+## External Literature Expansion
+
+Stage 2.8 adds external metadata discovery without weakening the title/abstract-first gate:
+
+```powershell
+python scripts/run_stage2_8_external_metadata_discovery.py `
+  --queries configs/stage2_8_external_search_queries.yaml `
+  --max-results-per-query 20 `
+  --max-candidates 300 `
+  --max-new-sources 100
+
+python scripts/run_production_autonomous_daemon.py `
+  --library zotero,external `
+  --external-metadata data/batches/stage2_8_external_metadata_new_sources.jsonl `
+  --mode title_abstract_to_database `
+  --until-library-exhausted `
+  --checkpoint-every 25 `
+  --rescan-zotero-attachments-every-cycle `
+  --max-wall-minutes 120 `
+  --max-new-screen 100 `
+  --max-new-fulltext 30 `
+  --max-new-extract-sources 15 `
+  --safe-stop-on-token-budget `
+  --token-budget 250000
+```
+
+External source adapters write metadata candidates only. The daemon preserves `source_origin` and `source_provider`, deduplicates DOI/title hashes against Zotero and prior runs, and calls `ExternalDownloadAgent` only after `title_abstract_screening_v1` returns `include_for_fulltext`. External fulltext resolution is metadata-only in prompts and must not bypass paywalls or commit PDF/HTML/SI files.
+
 ## Source Lifecycle
 
 Each source is classified as one of:

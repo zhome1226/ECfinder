@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "candidates_ref": {"type": "string"},
+    "deduped_ref": {"type": "string"},
+    "new_sources_ref": {"type": "string"},
+    "providers_attempted": {"items": {"type": "string"}, "type": "array"},
+    "providers_available": {"items": {"type": "string"}, "type": "array"},
+    "total_external_candidates": {"minimum": 0, "type": "integer"}
+  },
+  "required": ["candidates_ref", "deduped_ref", "new_sources_ref", "providers_attempted", "providers_available", "total_external_candidates"],
+  "type": "object"
+}

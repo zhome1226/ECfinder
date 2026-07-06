@@ -202,6 +202,9 @@ def make_runnable_item(row: dict[str, Any], previous: dict[str, Any], manifest: 
     else:
         priority += 100
         reasons.append("lower_relevance_unscreened_metadata")
+    if row.get("source_origin") == "external_search":
+        priority += 1000
+        reasons.append("stage2_8_external_source_priority")
     return {
         "source_id": source_id or manifest_source_id,
         "screening_source_id": source_id or manifest_source_id,
@@ -215,6 +218,16 @@ def make_runnable_item(row: dict[str, Any], previous: dict[str, Any], manifest: 
         "has_pdf_or_html_attachment": bool(manifest),
         "attachment_count": 1 if manifest else 0,
         "pdf_or_html_attachment_count": 1 if manifest else 0,
+        "source_origin": row.get("source_origin", "zotero_library"),
+        "source_provider": row.get("source_provider", "zotero"),
+        "external_source_id": row.get("external_source_id", ""),
+        "query_id": row.get("query_id", ""),
+        "query_text": row.get("query_text", ""),
+        "metadata_hash": row.get("metadata_hash", ""),
+        "title_abstract_hash": row.get("title_abstract_hash", ""),
+        "dedup_key": row.get("dedup_key", ""),
+        "provenance": row.get("provenance", []),
+        "open_access_hint": row.get("open_access_hint"),
         "previous_screening_decision": previous.get("screening_decision"),
         "previous_overall_status": previous.get("overall_status", ""),
         "runnable_classification": classification,
@@ -313,8 +326,9 @@ def write_audit_report(
     for row in classified:
         key = str(row.get("classification", "unknown"))
         counts[key] = counts.get(key, 0) + 1
+    stage_label = "Stage 2.8" if "stage2_8" in path.name else "Stage 2.7"
     lines = [
-        "# Stage 2.7 Runnable Source Audit",
+        f"# {stage_label} Runnable Source Audit",
         "",
         f"library_total_sources = {len(metadata)}",
         f"sources_with_pdf_or_html_attachment = {len(manifest_rows)}",

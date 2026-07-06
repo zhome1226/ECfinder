@@ -18,7 +18,7 @@ DEFAULT_METADATA_QUEUE = ROOT / "data" / "batches" / "stage2_6b_zotero_metadata_
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run production autonomous PFAS literature daemon.")
-    parser.add_argument("--library", required=True, choices=["zotero"])
+    parser.add_argument("--library", required=True)
     parser.add_argument("--mode", required=True, choices=["title_abstract_to_database"])
     parser.add_argument("--until-library-exhausted", action="store_true")
     parser.add_argument("--checkpoint-every", type=int, default=25)
@@ -33,13 +33,19 @@ def main() -> int:
     parser.add_argument("--stop-file", type=Path, default=None)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--metadata-queue", type=Path, default=DEFAULT_METADATA_QUEUE)
+    parser.add_argument("--external-metadata", type=Path, default=None)
     parser.add_argument("--dry-run-discovery-only", action="store_true")
     args = parser.parse_args()
     metadata_queue = args.metadata_queue if args.metadata_queue.is_absolute() else ROOT / args.metadata_queue
+    external_metadata = None
+    if args.external_metadata is not None:
+        external_metadata = args.external_metadata if args.external_metadata.is_absolute() else ROOT / args.external_metadata
+    batch_id = "stage2_8_external_daemon" if "external" in {part.strip().lower() for part in args.library.split(",")} or external_metadata else "stage2_7_production_daemon"
     summary = run_production_daemon(
         ROOT,
-        batch_id="stage2_7_production_daemon",
+        batch_id=batch_id,
         metadata_queue=metadata_queue,
+        external_metadata=external_metadata,
         library=args.library,
         mode=args.mode,
         until_library_exhausted=args.until_library_exhausted,

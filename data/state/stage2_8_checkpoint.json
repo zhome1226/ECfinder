@@ -1,0 +1,17 @@
+{
+  "batch_id": "stage2_8_external_daemon",
+  "blocked_external_sources": 19,
+  "checkpoint_count": 4,
+  "completed_sources": 0,
+  "database_records_written": 0,
+  "ended_because": "max_new_screen_reached",
+  "fulltext_found": 0,
+  "last_processed_source_id": "external_stage2_8_openalex_de4b798f9ac7",
+  "manual_screen_sources": 45,
+  "pending_tasks_remaining": 0,
+  "processed_sources": 100,
+  "screened_sources": 100,
+  "sources_extracted": 0,
+  "sources_parsed": 0,
+  "updated_at": "2026-07-06T11:33:43Z"
+}

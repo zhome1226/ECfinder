@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "metadata_ref": {"type": "string"},
+    "source_id": {"type": "string"},
+    "title_abstract_screening_decision": {"const": "include_for_fulltext"}
+  },
+  "required": ["source_id", "metadata_ref", "title_abstract_screening_decision"],
+  "type": "object"
+}

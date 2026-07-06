@@ -144,6 +144,32 @@
       "version": "1.0.0"
     },
     {
+      "agent_name": "ExternalSearchAgent",
+      "called_by": ["ProductionDaemon", "SupervisorAgent"],
+      "input_schema_ref": "skills/search/external_metadata_discovery/input.schema.json",
+      "instruction_ref": "skills/search/external_metadata_discovery/instruction.md",
+      "last_updated": "2026-07-06T00:00:00Z",
+      "output_schema_ref": "skills/search/external_metadata_discovery/output.schema.json",
+      "owner_agent": "SkillManagerAgent",
+      "skill_id": "external_metadata_discovery_v1",
+      "status": "active",
+      "token_policy": "query_and_metadata_refs_only",
+      "version": "1.0.0"
+    },
+    {
+      "agent_name": "ExternalDownloadAgent",
+      "called_by": ["ProductionDaemon", "SupervisorAgent"],
+      "input_schema_ref": "skills/download/external_fulltext_resolution/input.schema.json",
+      "instruction_ref": "skills/download/external_fulltext_resolution/instruction.md",
+      "last_updated": "2026-07-06T00:00:00Z",
+      "output_schema_ref": "skills/download/external_fulltext_resolution/output.schema.json",
+      "owner_agent": "SkillManagerAgent",
+      "skill_id": "external_fulltext_resolution_v1",
+      "status": "active",
+      "token_policy": "metadata_refs_only_no_fulltext_in_prompt",
+      "version": "1.0.0"
+    },
+    {
       "agent_name": "SkillManagerAgent",
       "called_by": ["validate_stage2_6_skill_architecture"],
       "input_schema_ref": "skills/skill_manager/input.schema.json",

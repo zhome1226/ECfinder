@@ -30,6 +30,8 @@ AGENTS = [
     "ReviewAgent",
     "DatabaseWriteAgent",
     "SupervisorAgent",
+    "ExternalSearchAgent",
+    "ExternalDownloadAgent",
     "SkillManagerAgent",
 ]
 

@@ -1,6 +1,6 @@
 # Stage 2.6 Readiness Summary
 
-active_skills = 12
+active_skills = 14
 skills_missing_contracts = 0
 agents_not_yet_skills = 0
 supervisor_agent_ready = true

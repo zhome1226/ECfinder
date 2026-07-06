@@ -1,0 +1,5 @@
+skill_id: external_fulltext_resolution_v1
+agent_name: ExternalDownloadAgent
+version: 1.0.0
+status: active
+token_policy: metadata_refs_only_no_fulltext_in_prompt

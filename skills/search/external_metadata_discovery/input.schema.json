@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "max_candidates": {"minimum": 1, "type": "integer"},
+    "max_results_per_query": {"minimum": 1, "type": "integer"},
+    "queries_ref": {"type": "string"}
+  },
+  "required": ["queries_ref", "max_results_per_query", "max_candidates"],
+  "type": "object"
+}

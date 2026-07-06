@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "access_method": {"type": "string"},
+    "blocked_reason": {"type": "string"},
+    "fulltext_available": {"type": "boolean"},
+    "lawful_access_checked": {"type": "boolean"},
+    "paywall_bypass_used": {"const": false},
+    "raw_fulltext_committed": {"const": false},
+    "resolution_status": {"enum": ["found_local", "found_open_access", "metadata_only", "blocked_external"]},
+    "source_id": {"type": "string"}
+  },
+  "required": ["source_id", "resolution_status", "fulltext_available", "lawful_access_checked", "paywall_bypass_used", "raw_fulltext_committed"],
+  "type": "object"
+}
