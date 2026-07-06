@@ -56,10 +56,10 @@ def index_artifact(
     output: list[dict[str, Any]] = []
     replaced = False
     for existing in indexed:
-        same_hash = existing.get("sha256") == digest
         same_path = existing.get("path") == rel
-        if same_hash or same_path:
-            existing = {**existing, **record, "valid": same_hash or same_path}
+        same_artifact_id = existing.get("artifact_id") == record["artifact_id"]
+        if same_path or same_artifact_id:
+            existing = {**existing, **record, "valid": True}
             replaced = True
         output.append(existing)
     if not replaced:

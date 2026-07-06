@@ -28,14 +28,20 @@ class StreamingPaths:
 
     @property
     def source_status(self) -> Path:
+        if self.prefix == "stage2_7":
+            return self.state / "stage2_7_library_source_status.jsonl"
         return self.state / f"{self.prefix}_source_status.jsonl"
 
     @property
     def events(self) -> Path:
+        if self.prefix == "stage2_7":
+            return self.state / "stage2_7_daemon_events.jsonl"
         return self.state / f"{self.prefix}_events.jsonl"
 
     @property
     def checkpoint(self) -> Path:
+        if self.prefix == "stage2_7":
+            return self.state / "stage2_7_daemon_checkpoint.json"
         return self.state / f"{self.prefix}_checkpoint.json"
 
     @property
@@ -72,38 +78,56 @@ class StreamingPaths:
 
     @property
     def summary_report(self) -> Path:
+        if self.prefix == "stage2_7":
+            return self.reports / "stage2_7_production_daemon_summary.md"
         return self.reports / f"{self.prefix}_autonomous_summary.md"
 
     @property
     def status_board_report(self) -> Path:
+        if self.prefix == "stage2_7":
+            return self.reports / "stage2_7_production_daemon_status_board.md"
         return self.reports / f"{self.prefix}_status_board.md"
 
     @property
     def skill_audit_report(self) -> Path:
+        if self.prefix == "stage2_7":
+            return self.reports / "stage2_7_skill_invocation_audit.md"
         return self.reports / f"{self.prefix}_skill_invocation_audit.md"
 
     @property
     def sync_review_report(self) -> Path:
+        if self.prefix == "stage2_7":
+            return self.reports / "stage2_7_synchronous_review_audit.md"
         return self.reports / f"{self.prefix}_synchronous_review_audit.md"
 
     @property
     def token_report(self) -> Path:
+        if self.prefix == "stage2_7":
+            return self.reports / "stage2_7_token_budget_audit.md"
         return self.reports / f"{self.prefix}_token_cost_audit.md"
 
     @property
     def blocked_report(self) -> Path:
+        if self.prefix == "stage2_7":
+            return self.reports / "stage2_7_blocked_source_audit.md"
         return self.reports / f"{self.prefix}_blocked_sources.md"
 
     @property
     def database_report(self) -> Path:
+        if self.prefix == "stage2_7":
+            return self.reports / "stage2_7_database_write_audit.md"
         return self.reports / f"{self.prefix}_database_audit.md"
 
     @property
     def resume_skip_report(self) -> Path:
+        if self.prefix == "stage2_7":
+            return self.reports / "stage2_7_completed_source_audit.md"
         return self.reports / f"{self.prefix}_resume_skip_audit.md"
 
     @property
     def strict_jsonl_report(self) -> Path:
+        if self.prefix == "stage2_7":
+            return self.reports / "stage2_7_strict_jsonl_audit.md"
         return self.reports / f"{self.prefix}_strict_jsonl_audit.md"
 
 

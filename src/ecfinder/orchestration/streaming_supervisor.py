@@ -223,7 +223,7 @@ class StreamingSupervisor:
             if self.should_skip_source(source):
                 self.skipped_previously_completed_sources += 1
                 continue
-            if source.get("allow_manual_rescreen") is True:
+            if source.get("allow_manual_rescreen") is True or source.get("allow_resume_reprocess") is True:
                 if source_id:
                     self.allowed_rescreen_source_ids.add(source_id)
                 if zotero_key:
@@ -357,8 +357,8 @@ class StreamingSupervisor:
             return True
         if doi and doi in self.registry_processed_dois:
             return True
-        allow_manual_rescreen = source.get("allow_manual_rescreen") is True
-        if allow_manual_rescreen:
+        allow_reprocess = source.get("allow_manual_rescreen") is True or source.get("allow_resume_reprocess") is True
+        if allow_reprocess:
             return False
         return bool(
             (source_id and source_id in self.skip_source_ids)
@@ -644,13 +644,16 @@ class StreamingSupervisor:
             "year": source.get("year", ""),
             "journal": source.get("journal", ""),
             "authors": [],
-            "provider": "stage2_6e_streaming_attachment_priority" if self.paths.prefix.startswith("stage2_6e") else "streaming_attachment_parse",
+            "provider": "stage2_7_production_daemon" if self.paths.prefix == "stage2_7" else ("stage2_6e_streaming_attachment_priority" if self.paths.prefix.startswith("stage2_6e") else "streaming_attachment_parse"),
             "zotero_item_key": source.get("zotero_item_key") or manifest.get("zotero_item_key", ""),
         }
         blocks, parse_warning = parse_local_file(manifest, local_path)
         run_prefix = self.output_stage_prefix()
         chunks = make_chunks(blocks, manifest, metadata, run_prefix)
-        run_dir = self.root / "data" / "runs" / f"{run_prefix}_{source_id}"
+        if self.paths.prefix == "stage2_7":
+            run_dir = self.root / "data" / "cache" / "stage2_7_runs" / f"{run_prefix}_{source_id}"
+        else:
+            run_dir = self.root / "data" / "runs" / f"{run_prefix}_{source_id}"
         run_dir.mkdir(parents=True, exist_ok=True)
         download_status = {
             "access_method": manifest.get("access_method", "zotero_local_attachment"),

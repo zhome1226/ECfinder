@@ -36,3 +36,9 @@ python -m ecfinder.cli review
 ```
 
 Use the bundled Codex Python or a project virtual environment with dependencies installed from `pyproject.toml`.
+
+## Production Autonomous Workflow
+
+Stage 2.7 adds a Zotero-backed production daemon that continuously discovers runnable sources, streams each source from title/abstract screening through reviewed database write, checkpoints progress, and stops only when the library is exhausted or a configured safety stop is reached.
+
+See `docs/PRODUCTION_AUTONOMOUS_WORKFLOW.md` for the workflow contract and `docs/OPERATION_MANUAL.md` for run, stop, resume, and validation commands.

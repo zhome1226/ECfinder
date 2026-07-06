@@ -1,0 +1,17 @@
+{
+  "batch_id": "stage2_7_production_daemon",
+  "blocked_external_sources": 1,
+  "checkpoint_count": 12,
+  "completed_sources": 0,
+  "database_records_written": 0,
+  "ended_because": "max_new_screen_reached",
+  "fulltext_found": 0,
+  "last_processed_source_id": "zotero_stage2_6c_src_454",
+  "manual_screen_sources": 96,
+  "pending_tasks_remaining": 0,
+  "processed_sources": 300,
+  "screened_sources": 300,
+  "sources_extracted": 0,
+  "sources_parsed": 0,
+  "updated_at": "2026-07-06T06:54:45Z"
+}
