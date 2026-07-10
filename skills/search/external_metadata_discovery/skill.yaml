@@ -1,5 +1,4 @@
 skill_id: external_metadata_discovery_v1
-agent_name: ExternalSearchAgent
 version: 1.0.0
 status: active
 token_policy: query_and_metadata_refs_only
