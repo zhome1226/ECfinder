@@ -1,26 +1,92 @@
-"""Runner for the ``external_metadata_discovery_v1`` skill.
+"""Executable runner for ``external_metadata_discovery_v1``.
 
-This module is the public executable boundary used by external harnesses. It
-keeps provider calls inside ECfinder and exchanges only durable JSON files with
-the caller.
+The runner is the public skill boundary called by ECMonitor. Provider-specific
+query compilation, HTTP execution, error classification, and metadata mapping
+live here so callers do not import ECfinder provider internals.
 """
 
 from __future__ import annotations
 
 import argparse
-import importlib
 import json
 import os
+import re
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, cast
 
-PROVIDER_MODULES = {
-    "crossref": "ecfinder.search.crossref_adapter",
-    "openalex": "ecfinder.search.openalex_adapter",
-    "semantic_scholar": "ecfinder.search.semantic_scholar_adapter",
-    "pubmed": "ecfinder.search.pubmed_adapter",
-}
+USER_AGENT = "ECfinder-external-metadata-discovery-v1/1.1"
+RUNNER_ID = "ecfinder.skills.external_metadata_discovery.runner"
+JSON_HEADERS = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+XML_HEADERS = {"User-Agent": USER_AGENT, "Accept": "application/xml,text/xml,*/*"}
+
+
+@dataclass(frozen=True)
+class ProviderRequest:
+    provider: str
+    url: str
+    sanitized_url: str
+    query: str
+    params: dict[str, Any]
+    sanitized_params: dict[str, Any]
+    headers: dict[str, str] = field(default_factory=dict)
+    sanitized_headers: dict[str, str] = field(default_factory=dict)
+    chunks: list[dict[str, Any]] = field(default_factory=list)
+
+    def executable_request(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "provider": self.provider,
+            "query": self.query,
+            "url": self.sanitized_url,
+            "params": self.sanitized_params,
+            "headers": self.sanitized_headers,
+            "runner": RUNNER_ID,
+        }
+        if self.chunks:
+            payload["chunks"] = self.chunks
+        return payload
+
+
+@dataclass(frozen=True)
+class HttpResponse:
+    status: int | None
+    headers: dict[str, str]
+    text: str
+    payload: Any = None
+    error: str = ""
+    url: str = ""
+
+
+@dataclass(frozen=True)
+class ProviderResult:
+    provider: str
+    records: list[dict[str, Any]]
+    status: str
+    error: str = ""
+    diagnostics: dict[str, Any] = field(default_factory=dict)
+    excluded_counts: dict[str, int] = field(default_factory=dict)
+
+    @property
+    def available(self) -> bool:
+        return self.status in {"success", "no-results", "partial"}
+
+
+class ProviderImplementation(Protocol):
+    name: str
+
+    def compile_request(self, context: dict[str, Any], limit: int) -> ProviderRequest: ...
+
+    def execute(self, request: ProviderRequest, limit: int) -> ProviderResult: ...
+
+    def normalize_record(self, raw: dict[str, Any]) -> dict[str, Any]: ...
+
+    def classify_error(self, response: HttpResponse) -> tuple[str, str, dict[str, Any]]: ...
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -32,8 +98,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     request_path = Path(args.input).resolve()
     output_path = Path(args.output).resolve()
-    request = _read_json(request_path)
-    result = run_skill(request, output_path)
+    result = run_skill(cast(dict[str, Any], _read_json(request_path)), output_path)
     _write_json(output_path, result)
     return 0
 
@@ -48,6 +113,7 @@ def run_skill(request: dict[str, Any], output_path: Path) -> dict[str, Any]:
     output_root.mkdir(parents=True, exist_ok=True)
     page_root = output_root / "provider_pages"
     page_root.mkdir(parents=True, exist_ok=True)
+
     queries = _load_queries_ref(Path(str(request["queries_ref"])))
     query_by_provider = {
         str(row.get("provider") or row.get("source_name")): row for row in queries
@@ -55,73 +121,69 @@ def run_skill(request: dict[str, Any], output_path: Path) -> dict[str, Any]:
     providers = [str(provider) for provider in request.get("providers", [])]
     max_candidates = int(request.get("max_candidates") or request.get("max_results_per_query") or 1)
     page_size = int(request.get("page_size") or max_candidates)
-    per_provider_limit = min(max_candidates, page_size * int(request.get("max_scan_depth_per_provider") or 1))
-    date_from = str(request.get("date_from") or "")
-    date_to = str(request.get("date_to") or "")
-    document_types = [str(value) for value in request.get("document_types", [])]
+    limit = min(max_candidates, page_size * int(request.get("max_scan_depth_per_provider") or 1))
+    context_base = {
+        "canonical_query": dict(request.get("canonical_query") or {}),
+        "date_from": str(request.get("date_from") or ""),
+        "date_to": str(request.get("date_to") or ""),
+        "document_types": [str(value) for value in request.get("document_types", [])],
+    }
+
     provider_page_refs: dict[str, list[str]] = {}
     provider_states: dict[str, dict[str, Any]] = {}
     source_status: dict[str, str] = {}
     next_cursor_by_provider: dict[str, str] = {}
     providers_available: list[str] = []
     candidates: list[dict[str, Any]] = []
+    implementations = _provider_implementations()
 
     for provider in providers:
-        state: dict[str, Any] = {
-            "provider": provider,
-            "date_from": date_from,
-            "date_to": date_to,
-            "document_types": document_types,
-            "requested_limit": per_provider_limit,
-        }
-        row = query_by_provider.get(provider, {})
-        executable_query = _provider_query(provider, row, date_from, date_to, document_types)
-        state["executable_request"] = _executable_request(provider, executable_query, per_provider_limit, date_from, date_to, document_types)
         provider_page_refs[provider] = []
-        if provider not in PROVIDER_MODULES:
-            state["error"] = "provider not supported by external_metadata_discovery_v1"
-            state["status"] = "not-run"
+        state = _provider_state(provider, context_base, limit)
+        implementation = implementations.get(provider)
+        if implementation is None:
+            state.update({"status": "not-run", "error": "unsupported provider"})
+            provider_states[provider] = state
             source_status[provider] = "not-run"
-            provider_states[provider] = state
+            next_cursor_by_provider[provider] = ""
             continue
-        try:
-            adapter = importlib.import_module(PROVIDER_MODULES[provider])
-            result = adapter.search(executable_query, max_results=per_provider_limit)
-        except Exception as exc:  # pragma: no cover - defensive executable boundary
-            state["error"] = str(exc)
-            state["status"] = "failed"
-            source_status[provider] = "failed"
-            provider_states[provider] = state
-            continue
-        records = list(getattr(result, "records", []) or [])
-        available = bool(getattr(result, "available", False))
-        error = str(getattr(result, "error", "") or "")
-        status = _provider_status(available, records, error)
-        state["status"] = status
-        state["error"] = error
-        state["record_count"] = len(records)
-        state["query_text"] = executable_query
-        source_status[provider] = status
-        if available:
+
+        context = dict(context_base)
+        context.update({"provider": provider, "row": query_by_provider.get(provider, {})})
+        provider_request = implementation.compile_request(context, limit)
+        state["executable_request"] = provider_request.executable_request()
+        state["query_text"] = provider_request.query
+        result = implementation.execute(provider_request, limit)
+        state.update(
+            {
+                "status": result.status,
+                "error": result.error,
+                "record_count": len(result.records),
+                "diagnostics": result.diagnostics,
+                "excluded_counts": result.excluded_counts,
+            }
+        )
+        source_status[provider] = result.status
+        if result.available:
             providers_available.append(provider)
-        if records:
+        if result.records:
             page_path = page_root / f"{provider}_page_0001.jsonl"
-            normalized = [
+            rows = [
                 _normalize_record(
-                    raw=record,
+                    raw=implementation.normalize_record(record),
                     provider=provider,
                     rank=rank,
                     run_id=run_id,
                     query_id=query_id,
                     iteration=iteration,
-                    executable_query=executable_query,
+                    executable_query=provider_request.query,
                 )
-                for rank, record in enumerate(records, start=1)
+                for rank, record in enumerate(result.records, start=1)
             ]
-            _write_jsonl(page_path, normalized)
+            _write_jsonl(page_path, rows)
             provider_page_refs[provider].append(str(page_path))
-            candidates.extend(normalized)
-            next_cursor_by_provider[provider] = str(len(normalized))
+            candidates.extend(rows)
+            next_cursor_by_provider[provider] = str(len(rows))
         else:
             next_cursor_by_provider[provider] = ""
         provider_states[provider] = state
@@ -150,61 +212,656 @@ def run_skill(request: dict[str, Any], output_path: Path) -> dict[str, Any]:
     }
 
 
-def _provider_query(
-    provider: str,
-    row: dict[str, Any],
-    date_from: str,
-    date_to: str,
-    document_types: list[str],
-) -> str:
-    base = str(row.get("query_text") or row.get("compiled_query") or "").strip()
-    if provider == "pubmed":
-        additions = []
-        if date_from or date_to:
-            additions.append(f'("{date_from or "1900-01-01"}"[Date - Publication] : "{date_to or "3000-12-31"}"[Date - Publication])')
-        if document_types:
-            additions.append("(" + " OR ".join(f'"{item}"[Publication Type]' for item in document_types) + ")")
-        return " AND ".join([part for part in [base, *additions] if part])
-    return base
+class CrossrefProvider:
+    name = "crossref"
+
+    def compile_request(self, context: dict[str, Any], limit: int) -> ProviderRequest:
+        query = _crossref_query(context)
+        params = {
+            "query.bibliographic": query,
+            "rows": min(max(limit * 5, limit), 50),
+            "filter": _join_filters(
+                [
+                    _date_filter("from-pub-date", context["date_from"]),
+                    _date_filter("until-pub-date", context["date_to"]),
+                    "type:journal-article" if _wants_articles(context["document_types"]) else "",
+                ]
+            ),
+            "select": ",".join(
+                [
+                    "DOI",
+                    "title",
+                    "abstract",
+                    "published-print",
+                    "published-online",
+                    "published",
+                    "container-title",
+                    "author",
+                    "URL",
+                    "link",
+                    "type",
+                    "language",
+                    "subject",
+                ]
+            ),
+        }
+        mailto = os.environ.get("CROSSREF_MAILTO", "").strip()
+        if mailto:
+            params["mailto"] = mailto
+        sanitized = _sanitize_params(params)
+        return ProviderRequest(
+            provider=self.name,
+            url=_url("https://api.crossref.org/works", params),
+            sanitized_url=_url("https://api.crossref.org/works", sanitized),
+            query=query,
+            params=params,
+            sanitized_params=sanitized,
+        )
+
+    def execute(self, request: ProviderRequest, limit: int) -> ProviderResult:
+        response = _http_json(request.url, JSON_HEADERS)
+        if response.status != 200 or not isinstance(response.payload, dict):
+            status, error, diagnostics = self.classify_error(response)
+            return ProviderResult(self.name, [], status, error, diagnostics)
+        records: list[dict[str, Any]] = []
+        excluded: dict[str, int] = {}
+        items = response.payload.get("message", {}).get("items", []) or []
+        for item in items:
+            reason = _crossref_exclusion_reason(item)
+            if reason:
+                excluded[reason] = excluded.get(reason, 0) + 1
+                continue
+            if _first_text(item.get("title")):
+                records.append(item)
+            if len(records) >= limit:
+                break
+        status = "success" if records else "no-results"
+        return ProviderResult(self.name, records, status, excluded_counts=excluded)
+
+    def normalize_record(self, raw: dict[str, Any]) -> dict[str, Any]:
+        authors = []
+        for author in raw.get("author", []) or []:
+            name = " ".join(str(author.get(part, "")).strip() for part in ["given", "family"]).strip()
+            if name:
+                authors.append(name)
+        links = raw.get("link", []) or []
+        return {
+            "source_provider": self.name,
+            "provider_record_id": _normalize_doi(raw.get("DOI")),
+            "doi": _normalize_doi(raw.get("DOI")),
+            "title": _first_text(raw.get("title")),
+            "abstract": _strip_markup(str(raw.get("abstract", "") or "")),
+            "year": _year_from_date_parts(raw.get("published-print"))
+            or _year_from_date_parts(raw.get("published-online"))
+            or _year_from_date_parts(raw.get("published")),
+            "journal": _first_text(raw.get("container-title")),
+            "authors": authors,
+            "keywords": [str(value) for value in raw.get("subject", []) or []],
+            "url": str(raw.get("URL", "") or ""),
+            "open_access_hint": {
+                "links": [
+                    {"url": link.get("URL", ""), "content_type": link.get("content-type", "")}
+                    for link in links[:3]
+                ]
+            }
+            if links
+            else None,
+            "document_type": raw.get("type"),
+            "language": raw.get("language"),
+        }
+
+    def classify_error(self, response: HttpResponse) -> tuple[str, str, dict[str, Any]]:
+        return _generic_error("crossref", response)
 
 
-def _executable_request(
-    provider: str,
-    query: str,
-    limit: int,
-    date_from: str,
-    date_to: str,
-    document_types: list[str],
-) -> dict[str, Any]:
+class OpenAlexProvider:
+    name = "openalex"
+
+    def compile_request(self, context: dict[str, Any], limit: int) -> ProviderRequest:
+        chunks = _openalex_chunks(context["canonical_query"], context["row"])
+        filter_parts = []
+        if context["date_from"]:
+            filter_parts.append(f"from_publication_date:{context['date_from']}")
+        if context["date_to"]:
+            filter_parts.append(f"to_publication_date:{context['date_to']}")
+        if _wants_articles(context["document_types"]):
+            filter_parts.append("type:article")
+        executable_chunks = []
+        for chunk in chunks:
+            params = {
+                "search": chunk,
+                "per-page": min(limit, 50),
+                "filter": ",".join(filter_parts),
+                "select": ",".join(
+                    [
+                        "id",
+                        "doi",
+                        "title",
+                        "display_name",
+                        "abstract_inverted_index",
+                        "publication_year",
+                        "publication_date",
+                        "primary_location",
+                        "authorships",
+                        "keywords",
+                        "open_access",
+                        "type",
+                        "language",
+                    ]
+                ),
+            }
+            api_key = os.environ.get("OPENALEX_API_KEY", "").strip()
+            if api_key:
+                params["api_key"] = api_key
+            executable_chunks.append(
+                {
+                    "query": chunk,
+                    "query_length": len(chunk),
+                    "url": _url("https://api.openalex.org/works", _sanitize_params(params)),
+                    "params": _sanitize_params(params),
+                    "_url": _url("https://api.openalex.org/works", params),
+                }
+            )
+        primary = executable_chunks[0]
+        return ProviderRequest(
+            provider=self.name,
+            url=str(primary["_url"]),
+            sanitized_url=str(primary["url"]),
+            query=" | ".join(chunks),
+            params={"chunks": executable_chunks},
+            sanitized_params={"chunks": [_drop_internal(chunk) for chunk in executable_chunks]},
+            chunks=[_drop_internal(chunk) for chunk in executable_chunks],
+        )
+
+    def execute(self, request: ProviderRequest, limit: int) -> ProviderResult:
+        records: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        diagnostics: dict[str, Any] = {"chunks_attempted": len(request.params["chunks"])}
+        for chunk in request.params["chunks"]:
+            response = _http_json(str(chunk["_url"]), JSON_HEADERS)
+            if response.status != 200 or not isinstance(response.payload, dict):
+                status, error, error_diagnostics = self.classify_error(response)
+                error_diagnostics["chunk_query_length"] = chunk["query_length"]
+                error_diagnostics["sanitized_url"] = chunk["url"]
+                return ProviderResult(self.name, records, "partial" if records else status, error, error_diagnostics)
+            for item in response.payload.get("results", []) or []:
+                key = _dedupe_key(item.get("id"), item.get("doi"))
+                if key in seen:
+                    continue
+                seen.add(key)
+                records.append(item)
+                if len(records) >= limit:
+                    break
+            if len(records) >= limit:
+                break
+        diagnostics["deduped_count"] = len(records)
+        return ProviderResult(self.name, records, "success" if records else "no-results", diagnostics=diagnostics)
+
+    def normalize_record(self, raw: dict[str, Any]) -> dict[str, Any]:
+        primary = raw.get("primary_location") or {}
+        source = primary.get("source") or {}
+        open_access = raw.get("open_access") or {}
+        authors = []
+        for authorship in raw.get("authorships", []) or []:
+            author = authorship.get("author") or {}
+            if author.get("display_name"):
+                authors.append(author["display_name"])
+        keywords = [
+            str(keyword.get("display_name"))
+            for keyword in raw.get("keywords", []) or []
+            if isinstance(keyword, dict) and keyword.get("display_name")
+        ]
+        return {
+            "source_provider": self.name,
+            "provider_record_id": str(raw.get("id", "") or ""),
+            "doi": _normalize_doi(raw.get("doi")),
+            "title": str(raw.get("title") or raw.get("display_name") or ""),
+            "abstract": _inverted_index_to_text(raw.get("abstract_inverted_index")),
+            "year": str(raw.get("publication_year") or ""),
+            "journal": str(source.get("display_name", "") or ""),
+            "authors": authors,
+            "keywords": keywords,
+            "url": str(primary.get("landing_page_url") or raw.get("id") or ""),
+            "open_access_hint": {
+                "is_oa": bool(open_access.get("is_oa")),
+                "oa_url": open_access.get("oa_url") or primary.get("pdf_url") or "",
+                "pdf_url": primary.get("pdf_url") or "",
+            },
+            "document_type": raw.get("type"),
+            "language": raw.get("language"),
+        }
+
+    def classify_error(self, response: HttpResponse) -> tuple[str, str, dict[str, Any]]:
+        status, error, diagnostics = _generic_error("openalex", response)
+        if response.status == 400:
+            diagnostics["classification"] = "request_syntax_or_filter_error"
+        return status, error, diagnostics
+
+
+class SemanticScholarProvider:
+    name = "semantic_scholar"
+
+    def compile_request(self, context: dict[str, Any], limit: int) -> ProviderRequest:
+        query = _semantic_query(context["canonical_query"], context["row"])
+        params = {
+            "query": query,
+            "limit": min(limit, 100),
+            "fields": ",".join(
+                [
+                    "paperId",
+                    "title",
+                    "abstract",
+                    "year",
+                    "journal",
+                    "authors",
+                    "externalIds",
+                    "openAccessPdf",
+                    "url",
+                    "publicationTypes",
+                    "publicationDate",
+                    "venue",
+                ]
+            ),
+        }
+        year_filter = _year_filter(context["date_from"], context["date_to"])
+        if year_filter:
+            params["year"] = year_filter
+        headers = dict(JSON_HEADERS)
+        sanitized_headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+        if os.environ.get("SEMANTIC_SCHOLAR_API_KEY", "").strip():
+            headers["x-api-key"] = os.environ["SEMANTIC_SCHOLAR_API_KEY"]
+            sanitized_headers["x-api-key"] = "configured"
+        url = _url("https://api.semanticscholar.org/graph/v1/paper/search", params)
+        return ProviderRequest(
+            provider=self.name,
+            url=url,
+            sanitized_url=url,
+            query=query,
+            params=params,
+            sanitized_params=params,
+            headers=headers,
+            sanitized_headers=sanitized_headers,
+        )
+
+    def execute(self, request: ProviderRequest, limit: int) -> ProviderResult:
+        attempts = 0
+        response = HttpResponse(None, {}, "", error="not attempted")
+        while attempts < 3:
+            attempts += 1
+            response = _http_json(request.url, request.headers)
+            if response.status == 429 and attempts < 3:
+                retry_after = response.headers.get("retry-after") or response.headers.get("Retry-After")
+                if retry_after and retry_after.isdigit():
+                    time.sleep(min(int(retry_after), 2))
+                continue
+            break
+        if response.status != 200 or not isinstance(response.payload, dict):
+            status, error, diagnostics = self.classify_error(response)
+            diagnostics["attempts"] = attempts
+            return ProviderResult(self.name, [], status, error, diagnostics)
+        data = response.payload.get("data")
+        if not isinstance(data, list):
+            return ProviderResult(
+                self.name,
+                [],
+                "failed",
+                "Semantic Scholar response missing data array",
+                {"classification": "invalid_response_shape"},
+            )
+        records = [item for item in data if isinstance(item, dict) and item.get("title")][:limit]
+        return ProviderResult(self.name, records, "success" if records else "no-results")
+
+    def normalize_record(self, raw: dict[str, Any]) -> dict[str, Any]:
+        external = raw.get("externalIds") or {}
+        journal = raw.get("journal") or {}
+        open_pdf = raw.get("openAccessPdf") or {}
+        publication_types = raw.get("publicationTypes")
+        return {
+            "source_provider": self.name,
+            "provider_record_id": str(raw.get("paperId", "") or ""),
+            "doi": _normalize_doi(external.get("DOI")),
+            "title": str(raw.get("title", "") or ""),
+            "abstract": str(raw.get("abstract", "") or ""),
+            "year": str(raw.get("year", "") or ""),
+            "journal": str(journal.get("name", "") if isinstance(journal, dict) else raw.get("venue", "") or ""),
+            "authors": [
+                str(author.get("name", ""))
+                for author in raw.get("authors", []) or []
+                if author.get("name")
+            ],
+            "keywords": [],
+            "url": str(raw.get("url", "") or ""),
+            "open_access_hint": {"pdf_url": open_pdf.get("url", ""), "status": open_pdf.get("status", "")},
+            "document_type": publication_types[0] if isinstance(publication_types, list) and publication_types else None,
+            "language": raw.get("language"),
+        }
+
+    def classify_error(self, response: HttpResponse) -> tuple[str, str, dict[str, Any]]:
+        status, error, diagnostics = _generic_error("semantic_scholar", response)
+        if response.status == 400:
+            diagnostics["classification"] = "request_syntax_error"
+        if response.status == 429:
+            status = "rate-limited"
+            diagnostics["classification"] = "rate_limited"
+            diagnostics["retry_after"] = response.headers.get("retry-after") or response.headers.get("Retry-After")
+        return status, error, diagnostics
+
+
+class PubMedProvider:
+    name = "pubmed"
+
+    def compile_request(self, context: dict[str, Any], limit: int) -> ProviderRequest:
+        query = _pubmed_query(context)
+        email = os.environ.get("NCBI_EMAIL", "").strip()
+        tool = os.environ.get("NCBI_TOOL", "ECMonitor").strip() or "ECMonitor"
+        api_key = os.environ.get("NCBI_API_KEY", "").strip()
+        params = {
+            "db": "pubmed",
+            "term": query,
+            "retmax": str(min(limit, 50)),
+            "retmode": "json",
+            "email": email,
+            "tool": tool,
+        }
+        if api_key:
+            params["api_key"] = api_key
+        sanitized = _sanitize_params(params)
+        return ProviderRequest(
+            provider=self.name,
+            url=_url("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi", params),
+            sanitized_url=_url("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi", sanitized),
+            query=query,
+            params=params,
+            sanitized_params=sanitized,
+        )
+
+    def execute(self, request: ProviderRequest, limit: int) -> ProviderResult:
+        if not os.environ.get("NCBI_EMAIL", "").strip():
+            return ProviderResult(
+                self.name,
+                [],
+                "configuration_required",
+                "NCBI_EMAIL missing",
+                {"classification": "configuration_required"},
+            )
+        esearch = _http_text(request.url, JSON_HEADERS)
+        error = _pubmed_response_error(esearch, "esearch", expect_json=True)
+        if error is not None:
+            return error
+        payload = json.loads(esearch.text)
+        ids = payload.get("esearchresult", {}).get("idlist", [])
+        if not ids:
+            return ProviderResult(self.name, [], "no-results")
+        efetch_params = {
+            "db": "pubmed",
+            "id": ",".join(str(item) for item in ids[:limit]),
+            "retmode": "xml",
+            "email": os.environ.get("NCBI_EMAIL", "").strip(),
+            "tool": os.environ.get("NCBI_TOOL", "ECMonitor").strip() or "ECMonitor",
+        }
+        if os.environ.get("NCBI_API_KEY", "").strip():
+            efetch_params["api_key"] = os.environ["NCBI_API_KEY"]
+        efetch = _http_text(_url("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi", efetch_params), XML_HEADERS)
+        error = _pubmed_response_error(efetch, "efetch", expect_json=False)
+        if error is not None:
+            return error
+        try:
+            root = ET.fromstring(efetch.text.strip())
+        except ET.ParseError:
+            return ProviderResult(
+                self.name,
+                [],
+                "failed",
+                "PubMed EFetch returned malformed XML",
+                _pubmed_diagnostics(efetch, "malformed_xml", "efetch"),
+            )
+        records = [record for record in _pubmed_records(root) if record.get("title")][:limit]
+        return ProviderResult(self.name, records, "success" if records else "no-results")
+
+    def normalize_record(self, raw: dict[str, Any]) -> dict[str, Any]:
+        return raw
+
+    def classify_error(self, response: HttpResponse) -> tuple[str, str, dict[str, Any]]:
+        status, error, diagnostics = _generic_error("pubmed", response)
+        diagnostics["content_type"] = _content_type(response)
+        return status, error, diagnostics
+
+
+def _provider_implementations() -> dict[str, ProviderImplementation]:
     return {
-        "provider": provider,
-        "query": query,
-        "limit": limit,
-        "date_from": date_from,
-        "date_to": date_to,
-        "document_types": document_types,
-        "runner": "ecfinder.skills.external_metadata_discovery.runner",
+        "crossref": CrossrefProvider(),
+        "openalex": OpenAlexProvider(),
+        "semantic_scholar": SemanticScholarProvider(),
+        "pubmed": PubMedProvider(),
     }
 
 
-def _provider_status(available: bool, records: list[dict[str, Any]], error: str) -> str:
-    if error:
-        lowered = error.lower()
-        if "429" in lowered or "rate" in lowered:
-            return "rate-limited"
-        return "failed" if not records else "partial"
-    if not available:
-        return "failed"
-    return "success" if records else "no-results"
+def _provider_state(provider: str, context: dict[str, Any], requested_limit: int) -> dict[str, Any]:
+    return {
+        "provider": provider,
+        "date_from": context["date_from"],
+        "date_to": context["date_to"],
+        "document_types": context["document_types"],
+        "requested_limit": requested_limit,
+        "auth": _auth_status(provider),
+    }
+
+
+def _auth_status(provider: str) -> dict[str, str]:
+    if provider == "crossref":
+        return {"CROSSREF_MAILTO": _configured("CROSSREF_MAILTO")}
+    if provider == "openalex":
+        return {"OPENALEX_API_KEY": _configured("OPENALEX_API_KEY")}
+    if provider == "semantic_scholar":
+        return {"SEMANTIC_SCHOLAR_API_KEY": _configured("SEMANTIC_SCHOLAR_API_KEY")}
+    if provider == "pubmed":
+        return {
+            "NCBI_EMAIL": _configured("NCBI_EMAIL"),
+            "NCBI_TOOL": _configured("NCBI_TOOL"),
+            "NCBI_API_KEY": _configured("NCBI_API_KEY"),
+        }
+    return {}
+
+
+def _configured(name: str) -> str:
+    return "configured" if os.environ.get(name, "").strip() else "missing"
+
+
+def _crossref_query(context: dict[str, Any]) -> str:
+    canonical = context["canonical_query"]
+    terms = []
+    terms.extend(_terms(canonical, "emerging_contaminant_terms", limit=4))
+    terms.extend(_terms(canonical, "surface_water_terms", limit=4))
+    terms.extend(_terms(canonical, "monitoring_and_concentration_terms", limit=3))
+    if not terms:
+        return str(context["row"].get("query_text") or context["row"].get("compiled_query") or "").strip()
+    return " ".join(_plain_term(term) for term in terms)
+
+
+def _openalex_chunks(canonical: dict[str, Any], row: dict[str, Any]) -> list[str]:
+    emerging = _terms(canonical, "emerging_contaminant_terms", limit=3) or ["emerging contaminants"]
+    water = _terms(canonical, "surface_water_terms", limit=3) or ["surface water"]
+    monitoring = _terms(canonical, "monitoring_and_concentration_terms", limit=2) or ["monitoring"]
+    chunks = []
+    for index, term in enumerate(emerging):
+        chunks.append(
+            " ".join(
+                [
+                    _plain_term(term),
+                    _plain_term(water[index % len(water)]),
+                    _plain_term(monitoring[index % len(monitoring)]),
+                ]
+            )
+        )
+    if not chunks:
+        chunks = [_plain_term(str(row.get("query_text") or row.get("compiled_query") or ""))[:180]]
+    return [_truncate_query(chunk, 180) for chunk in chunks if chunk.strip()]
+
+
+def _semantic_query(canonical: dict[str, Any], row: dict[str, Any]) -> str:
+    terms = []
+    terms.extend(_terms(canonical, "emerging_contaminant_terms", limit=2) or ["emerging contaminants"])
+    terms.extend(_terms(canonical, "surface_water_terms", limit=2) or ["surface water"])
+    terms.extend(_terms(canonical, "monitoring_and_concentration_terms", limit=1) or ["monitoring"])
+    query = " ".join(_plain_term(term) for term in terms)
+    if not query.strip():
+        query = _plain_term(str(row.get("query_text") or row.get("compiled_query") or ""))
+    return _truncate_query(query, 180)
+
+
+def _pubmed_query(context: dict[str, Any]) -> str:
+    canonical = context["canonical_query"]
+    blocks = []
+    for key in [
+        "emerging_contaminant_terms",
+        "surface_water_terms",
+        "monitoring_and_concentration_terms",
+    ]:
+        terms = _terms(canonical, key, limit=8)
+        if terms:
+            blocks.append("(" + " OR ".join(f'"{_plain_term(term)}"[Title/Abstract]' for term in terms) + ")")
+    base = " AND ".join(blocks) or str(context["row"].get("query_text") or context["row"].get("compiled_query") or "")
+    additions = []
+    if context["date_from"] or context["date_to"]:
+        additions.append(
+            f'("{context["date_from"] or "1900-01-01"}"[Date - Publication] : '
+            f'"{context["date_to"] or "3000-12-31"}"[Date - Publication])'
+        )
+    if context["document_types"]:
+        additions.append("(" + " OR ".join(f'"{item}"[Publication Type]' for item in context["document_types"]) + ")")
+    return " AND ".join([part for part in [base, *additions] if part])
+
+
+def _crossref_exclusion_reason(item: dict[str, Any]) -> str:
+    doi = _normalize_doi(item.get("DOI"))
+    title = _first_text(item.get("title"))
+    item_type = str(item.get("type") or "").lower()
+    if item_type in {"peer-review", "peer_review", "posted-content"}:
+        return "crossref_peer_review_or_posted_content"
+    if re.search(r"/review\d+\b", doi, flags=re.IGNORECASE):
+        return "doi_review_artifact"
+    if title.lower().startswith("review for "):
+        return "title_review_artifact"
+    return ""
+
+
+def _pubmed_response_error(response: HttpResponse, stage: str, *, expect_json: bool) -> ProviderResult | None:
+    if response.status != 200:
+        return ProviderResult("pubmed", [], "failed", f"PubMed {stage} HTTP status {response.status}", _pubmed_diagnostics(response, "http_error", stage))
+    text = response.text.strip()
+    content_type = _content_type(response).lower()
+    if not text:
+        return ProviderResult("pubmed", [], "failed", f"PubMed {stage} returned empty response", _pubmed_diagnostics(response, "empty_response", stage))
+    if "html" in content_type or text.lower().startswith("<html"):
+        return ProviderResult("pubmed", [], "failed", f"PubMed {stage} returned HTML response", _pubmed_diagnostics(response, "html_response", stage))
+    if expect_json:
+        try:
+            json.loads(text)
+        except json.JSONDecodeError:
+            return ProviderResult("pubmed", [], "failed", f"PubMed {stage} returned non-JSON response", _pubmed_diagnostics(response, "non_json_response", stage))
+    return None
+
+
+def _pubmed_records(root: ET.Element) -> list[dict[str, Any]]:
+    records = []
+    for article in root.findall(".//PubmedArticle"):
+        pmid = article.findtext(".//PMID") or ""
+        publication_types = [node.text or "" for node in article.findall(".//PublicationType") if node.text]
+        records.append(
+            {
+                "source_provider": "pubmed",
+                "provider_record_id": pmid,
+                "doi": _pubmed_doi(article),
+                "title": _xml_text(article.find(".//ArticleTitle")),
+                "abstract": " ".join(_xml_text(node) for node in article.findall(".//AbstractText") if _xml_text(node)),
+                "year": article.findtext(".//PubDate/Year") or article.findtext(".//ArticleDate/Year") or "",
+                "journal": article.findtext(".//Journal/Title") or "",
+                "authors": _pubmed_authors(article),
+                "keywords": [],
+                "url": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/" if pmid else "",
+                "open_access_hint": None,
+                "document_type": publication_types[0] if publication_types else None,
+                "language": article.findtext(".//Language"),
+            }
+        )
+    return records
+
+
+def _pubmed_doi(article: ET.Element) -> str:
+    for aid in article.findall(".//ArticleId"):
+        if aid.attrib.get("IdType") == "doi" and aid.text:
+            return _normalize_doi(aid.text)
+    return ""
+
+
+def _pubmed_authors(article: ET.Element) -> list[str]:
+    authors = []
+    for author in article.findall(".//Author"):
+        name = " ".join([author.findtext("ForeName") or "", author.findtext("LastName") or ""]).strip()
+        if name:
+            authors.append(name)
+    return authors
+
+
+def _http_json(url: str, headers: dict[str, str]) -> HttpResponse:
+    response = _http_text(url, headers)
+    if response.status == 200 and response.text.strip():
+        try:
+            return HttpResponse(
+                response.status,
+                response.headers,
+                response.text,
+                json.loads(response.text),
+                response.error,
+                response.url,
+            )
+        except json.JSONDecodeError as exc:
+            return HttpResponse(response.status, response.headers, response.text, None, str(exc), response.url)
+    return response
+
+
+def _http_text(url: str, headers: dict[str, str]) -> HttpResponse:
+    request = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            text = response.read().decode("utf-8", errors="replace")
+            return HttpResponse(int(response.status), dict(response.headers.items()), text, url=url)
+    except urllib.error.HTTPError as exc:
+        text = exc.read().decode("utf-8", errors="replace") if hasattr(exc, "read") else ""
+        return HttpResponse(int(exc.code), dict(exc.headers.items()), text, error=str(exc), url=url)
+    except Exception as exc:  # pragma: no cover - network dependent
+        return HttpResponse(None, {}, "", error=str(exc), url=url)
+
+
+def _generic_error(provider: str, response: HttpResponse) -> tuple[str, str, dict[str, Any]]:
+    status = "rate-limited" if response.status == 429 else "failed"
+    error = response.error or f"{provider} HTTP status {response.status}"
+    diagnostics = {
+        "http_status": response.status,
+        "classification": "rate_limited" if response.status == 429 else "http_or_transport_error",
+        "response_snippet": _snippet(response.text),
+    }
+    return status, error, diagnostics
+
+
+def _pubmed_diagnostics(response: HttpResponse, classification: str, stage: str) -> dict[str, Any]:
+    return {
+        "stage": stage,
+        "classification": classification,
+        "http_status": response.status,
+        "content_type": _content_type(response),
+        "response_snippet": _snippet(response.text),
+    }
 
 
 def _execution_status(source_status: dict[str, str], total: int) -> str:
     statuses = set(source_status.values())
-    if statuses and statuses <= {"failed", "rate-limited", "not-run"}:
+    failed_only = {"failed", "rate-limited", "not-run", "configuration_required"}
+    if statuses and statuses <= failed_only:
         return "failed"
     if total == 0:
         return "no_results"
-    if statuses & {"failed", "rate-limited", "partial"}:
+    if statuses & {"failed", "rate-limited", "partial", "configuration_required"}:
         return "partial"
     return "success"
 
@@ -244,6 +901,119 @@ def _load_queries_ref(path: Path) -> list[dict[str, Any]]:
     if isinstance(value, list):
         return [dict(row) for row in value if isinstance(row, dict)]
     return []
+
+
+def _terms(canonical: dict[str, Any], key: str, *, limit: int) -> list[str]:
+    values = canonical.get(key)
+    if not isinstance(values, list):
+        return []
+    return [str(value) for value in values if str(value).strip()][:limit]
+
+
+def _plain_term(term: str) -> str:
+    return " ".join(term.replace("*", "").replace('"', "").split())
+
+
+def _truncate_query(query: str, limit: int) -> str:
+    query = " ".join(query.split())
+    if len(query) > limit and " " in query[:limit]:
+        return query[:limit].rsplit(" ", 1)[0]
+    return query[:limit]
+
+
+def _wants_articles(document_types: list[str]) -> bool:
+    text = " ".join(document_types).lower()
+    return not text or "article" in text
+
+
+def _date_filter(name: str, value: str) -> str:
+    return f"{name}:{value}" if value else ""
+
+
+def _join_filters(parts: list[str]) -> str:
+    return ",".join(part for part in parts if part)
+
+
+def _year_filter(date_from: str, date_to: str) -> str:
+    start = date_from[:4] if date_from else ""
+    end = date_to[:4] if date_to else ""
+    if start and end:
+        return f"{start}-{end}"
+    return start or end
+
+
+def _url(base: str, params: dict[str, Any]) -> str:
+    clean = {key: value for key, value in params.items() if value not in {None, ""}}
+    return base + "?" + urllib.parse.urlencode(clean)
+
+
+def _sanitize_params(params: dict[str, Any]) -> dict[str, Any]:
+    sanitized = dict(params)
+    for secret in ["api_key", "email", "mailto"]:
+        if sanitized.get(secret):
+            sanitized[secret] = "configured"
+    return sanitized
+
+
+def _drop_internal(payload: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in payload.items() if not key.startswith("_")}
+
+
+def _dedupe_key(*values: Any) -> str:
+    for value in values:
+        if value:
+            return _normalize_doi(value) or str(value).strip().lower()
+    return ""
+
+
+def _content_type(response: HttpResponse) -> str:
+    for key, value in response.headers.items():
+        if key.lower() == "content-type":
+            return value
+    return ""
+
+
+def _snippet(text: str, limit: int = 240) -> str:
+    return " ".join((text or "").split())[:limit]
+
+
+def _strip_markup(value: str) -> str:
+    return re.sub(r"<[^>]+>", " ", value or "").replace("  ", " ").strip()
+
+
+def _first_text(value: Any) -> str:
+    if isinstance(value, list) and value:
+        return _strip_markup(str(value[0]))
+    return _strip_markup(str(value or ""))
+
+
+def _normalize_doi(value: Any) -> str:
+    doi = str(value or "").strip()
+    doi = re.sub(r"^https?://(dx\.)?doi\.org/", "", doi, flags=re.IGNORECASE)
+    return doi.lower()
+
+
+def _year_from_date_parts(value: Any) -> str:
+    try:
+        return str(value["date-parts"][0][0])
+    except (KeyError, IndexError, TypeError):
+        return ""
+
+
+def _inverted_index_to_text(index: Any) -> str:
+    if not isinstance(index, dict):
+        return ""
+    pairs: list[tuple[int, str]] = []
+    for word, positions in index.items():
+        if isinstance(positions, list):
+            pairs.extend((position, str(word)) for position in positions if isinstance(position, int))
+    return " ".join(word for _, word in sorted(pairs))
+
+
+def _xml_text(node: ET.Element | None) -> str:
+    if node is None:
+        return ""
+    return "".join(node.itertext()).strip()
 
 
 def _read_json(path: Path) -> dict[str, Any] | list[Any]:
