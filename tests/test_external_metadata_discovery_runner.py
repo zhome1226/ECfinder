@@ -82,6 +82,15 @@ def test_crossref_review_artifact_is_excluded_and_article_kept(monkeypatch: pyte
     assert normalized["language"] == "en"
 
 
+def test_crossref_select_omits_unsupported_language_and_subject() -> None:
+    provider = runner.CrossrefProvider()
+    request = provider.compile_request(context(), 2)
+    select = request.params["select"]
+    assert "language" not in select
+    assert "subject" not in select
+    assert "type" in select
+
+
 def test_openalex_uses_short_chunks_not_raw_boolean_and_dedupes(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OPENALEX_API_KEY", raising=False)
     provider = runner.OpenAlexProvider()
@@ -170,6 +179,30 @@ def test_pubmed_json_esearch_and_xml_efetch_parse(monkeypatch: pytest.MonkeyPatc
     normalized = provider.normalize_record(result.records[0])
     assert normalized["document_type"] == "Journal Article"
     assert normalized["language"] == "eng"
+
+
+def test_pubmed_blocked_html_retries_without_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NCBI_EMAIL", "configured@example.invalid")
+    monkeypatch.setenv("NCBI_TOOL", "ECMonitor")
+    monkeypatch.setenv("NCBI_API_KEY", "secret")
+    blocked = runner.HttpResponse(
+        200,
+        {"content-type": "text/html"},
+        "<html><title>NCBI - WWW Error Blocked Diagnostic</title></html>",
+    )
+    esearch = runner.HttpResponse(
+        200,
+        {"content-type": "application/json"},
+        '{"esearchresult":{"idlist":[]}}',
+    )
+    fake = FakeHTTP([blocked, esearch])
+    monkeypatch.setattr(runner, "_http_text", fake.text)
+    provider = runner.PubMedProvider()
+    result = provider.execute(provider.compile_request(context(), 1), 1)
+    assert result.status == "no-results"
+    assert len(fake.urls) == 2
+    assert "api_key=" in fake.urls[0]
+    assert "api_key=" not in fake.urls[1]
 
 
 @pytest.mark.parametrize(

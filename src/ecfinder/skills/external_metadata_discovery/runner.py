@@ -240,8 +240,6 @@ class CrossrefProvider:
                     "URL",
                     "link",
                     "type",
-                    "language",
-                    "subject",
                 ]
             ),
         }
@@ -585,6 +583,16 @@ class PubMedProvider:
                 {"classification": "configuration_required"},
             )
         esearch = _http_text(request.url, JSON_HEADERS)
+        if _is_pubmed_blocked_html(esearch) and request.params.get("api_key"):
+            retry_params = dict(request.params)
+            retry_params.pop("api_key", None)
+            retry_url = _url(
+                "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
+                retry_params,
+            )
+            retry = _http_text(retry_url, JSON_HEADERS)
+            if not _is_pubmed_blocked_html(retry):
+                esearch = retry
         error = _pubmed_response_error(esearch, "esearch", expect_json=True)
         if error is not None:
             return error
@@ -712,14 +720,18 @@ def _semantic_query(canonical: dict[str, Any], row: dict[str, Any]) -> str:
 def _pubmed_query(context: dict[str, Any]) -> str:
     canonical = context["canonical_query"]
     blocks = []
-    for key in [
-        "emerging_contaminant_terms",
-        "surface_water_terms",
-        "monitoring_and_concentration_terms",
-    ]:
-        terms = _terms(canonical, key, limit=8)
+    preferred_terms = {
+        "emerging_contaminant_terms": ["emerging contaminant", "micropollutant"],
+        "surface_water_terms": ["surface water", "river", "lake", "estuary", "marine water"],
+        "monitoring_and_concentration_terms": ["monitoring", "occurrence", "concentration"],
+    }
+    for key, preferred in preferred_terms.items():
+        available = {_plain_term(term).lower() for term in _terms(canonical, key, limit=20)}
+        terms = [term for term in preferred if term.lower() in available]
+        if not terms and key == "surface_water_terms":
+            terms = ["surface water"]
         if terms:
-            blocks.append("(" + " OR ".join(f'"{_plain_term(term)}"[Title/Abstract]' for term in terms) + ")")
+            blocks.append("(" + " OR ".join(f'"{term}"[Title/Abstract]' for term in terms[:3]) + ")")
     base = " AND ".join(blocks) or str(context["row"].get("query_text") or context["row"].get("compiled_query") or "")
     additions = []
     if context["date_from"] or context["date_to"]:
@@ -760,6 +772,14 @@ def _pubmed_response_error(response: HttpResponse, stage: str, *, expect_json: b
         except json.JSONDecodeError:
             return ProviderResult("pubmed", [], "failed", f"PubMed {stage} returned non-JSON response", _pubmed_diagnostics(response, "non_json_response", stage))
     return None
+
+
+def _is_pubmed_blocked_html(response: HttpResponse) -> bool:
+    return (
+        response.status == 200
+        and "html" in _content_type(response).lower()
+        and "blocked diagnostic" in response.text.lower()
+    )
 
 
 def _pubmed_records(root: ET.Element) -> list[dict[str, Any]]:
