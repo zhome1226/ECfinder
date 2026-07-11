@@ -572,6 +572,72 @@ def test_pubmed_web_fallback_tries_broader_queries_when_strict_query_has_no_ids(
     assert result.diagnostics["web_query"] == "emerging contaminants river concentration"
 
 
+def test_pubmed_web_fallback_continues_after_ineligible_first_hit_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NCBI_EMAIL", "configured@example.invalid")
+    monkeypatch.setenv("NCBI_TOOL", "ECMonitor")
+    blocked = runner.HttpResponse(
+        200,
+        {"content-type": "text/html"},
+        "<html><title>NCBI - WWW Error Blocked Diagnostic</title></html>",
+    )
+    review_html = runner.HttpResponse(
+        200,
+        {"content-type": "text/html"},
+        """
+        <div class="docsum-content">
+          <a class="docsum-title" href="/111/" data-article-id="111">
+            A review on environmental monitoring of water organic pollutants identified by EU guidelines.
+          </a>
+          <div class="docsum-citation full-citation">Water Rev. 2020.</div>
+        </div>
+        <div class="result-actions-bar bottom-bar"></div>
+        """,
+    )
+    review_detail = runner.HttpResponse(
+        200,
+        {"content-type": "text/html"},
+        """
+        <html lang="en">
+          <meta name="description" content="This review summarizes environmental monitoring of water organic pollutants.">
+        </html>
+        """,
+    )
+    field_html = runner.HttpResponse(
+        200,
+        {"content-type": "text/html"},
+        """
+        <div class="docsum-content">
+          <a class="docsum-title" href="/222/" data-article-id="222">
+            Occurrence of emerging contaminants in highly anthropogenically influenced river Yamuna in India.
+          </a>
+          <div class="docsum-citation full-citation">Water Res. 2021.</div>
+        </div>
+        <div class="result-actions-bar bottom-bar"></div>
+        """,
+    )
+    field_detail = runner.HttpResponse(
+        200,
+        {"content-type": "text/html"},
+        """
+        <html lang="en">
+          <meta name="description" content="Measured concentrations in river water samples.">
+          <meta name="keywords" content="doi:10.1000/field, Rivers">
+        </html>
+        """,
+    )
+    fake = FakeHTTP([blocked, blocked, review_html, blocked, review_detail, field_html, blocked, field_detail])
+    monkeypatch.setattr(runner, "_http_text", fake.text)
+
+    provider = runner.PubMedProvider()
+    result = provider.execute(provider.compile_request(context(), 1), 1)
+
+    assert result.status == "partial"
+    assert result.records[0]["provider_record_id"] == "222"
+    assert result.diagnostics["web_query"] == "emerging contaminants river concentration"
+
+
 def test_pubmed_web_fallback_filters_review_records(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -663,7 +729,17 @@ def test_pubmed_web_fallback_no_eligible_records_remains_partial(
         </html>
         """,
     )
-    fake = FakeHTTP([blocked, blocked, html, blocked, review_detail])
+    empty_html = runner.HttpResponse(200, {"content-type": "text/html"}, "<html></html>")
+    fake = FakeHTTP(
+        [
+            blocked,
+            blocked,
+            html,
+            blocked,
+            review_detail,
+            *[empty_html for _ in range(20)],
+        ]
+    )
     monkeypatch.setattr(runner, "_http_text", fake.text)
 
     provider = runner.PubMedProvider()

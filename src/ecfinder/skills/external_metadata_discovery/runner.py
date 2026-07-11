@@ -1076,27 +1076,64 @@ def _pubmed_html_fallback_search(
     request: ProviderRequest, limit: int
 ) -> ProviderResult | None:
     """Fallback when E-utilities are blocked but the PubMed web UI is reachable."""
-    html = None
-    ids: list[str] = []
-    web_query = ""
-    for candidate_query in _pubmed_web_queries(request.query):
+    last_html = None
+    attempts = _pubmed_web_queries(request.query)
+    no_eligible_attempts: list[dict[str, Any]] = []
+    for candidate_query in attempts:
         html_url = "https://pubmed.ncbi.nlm.nih.gov/?" + urllib.parse.urlencode(
             {"term": candidate_query}
         )
         html = _http_text(html_url, {"User-Agent": USER_AGENT, "Accept": "text/html,*/*"})
+        last_html = html
         if html.status != 200 or _is_pubmed_blocked_html(html):
             continue
         ids = _pubmed_ids_from_html(html.text)[: min(max(limit * 8, limit), 50)]
-        web_query = candidate_query
-        if ids:
-            break
-    if html is None or html.status != 200 or _is_pubmed_blocked_html(html):
+        if not ids:
+            continue
+        fallback = _pubmed_html_fallback_records(
+            request=request,
+            limit=limit,
+            html=html,
+            ids=ids,
+            web_query=candidate_query,
+        )
+        if fallback.records or "no eligible records" not in fallback.error:
+            return fallback
+        no_eligible_attempts.append(
+            {
+                "web_query": candidate_query,
+                "candidate_ids": len(ids),
+                "error": fallback.error,
+            }
+        )
+    if last_html is None or last_html.status != 200 or _is_pubmed_blocked_html(last_html):
         return None
-    if not ids:
-        diagnostics = _pubmed_diagnostics(html, "pubmed_html_no_ids", "web_search")
+    if not no_eligible_attempts:
+        diagnostics = _pubmed_diagnostics(last_html, "pubmed_html_no_ids", "web_search")
         diagnostics["fallback"] = "pubmed_web_html"
-        diagnostics["web_query_attempts"] = len(_pubmed_web_queries(request.query))
+        diagnostics["web_query_attempts"] = len(attempts)
         return ProviderResult("pubmed", [], "failed", "PubMed web fallback returned no IDs", diagnostics)
+    diagnostics = _pubmed_diagnostics(last_html, "pubmed_html_no_eligible_records", "web_search")
+    diagnostics["fallback"] = "pubmed_web_html"
+    diagnostics["web_query_attempts"] = len(attempts)
+    diagnostics["no_eligible_attempts"] = no_eligible_attempts
+    return ProviderResult(
+        "pubmed",
+        [],
+        "partial",
+        "E-utilities blocked; PubMed web HTML fallback returned no eligible records after filtering",
+        diagnostics,
+    )
+
+
+def _pubmed_html_fallback_records(
+    *,
+    request: ProviderRequest,
+    limit: int,
+    html: HttpResponse,
+    ids: list[str],
+    web_query: str,
+) -> ProviderResult:
 
     efetch_params = {
         "db": "pubmed",
@@ -1127,7 +1164,10 @@ def _pubmed_html_fallback_search(
                     ],
                     limit,
                 )
-                diagnostics = {"fallback": "pubmed_web_html_ids_then_efetch"}
+                diagnostics = {
+                    "fallback": "pubmed_web_html_ids_then_efetch",
+                    "web_query": web_query,
+                }
                 return ProviderResult(
                     "pubmed",
                     records,
