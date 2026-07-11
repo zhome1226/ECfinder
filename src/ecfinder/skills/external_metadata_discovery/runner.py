@@ -181,6 +181,7 @@ def provider_health_check(providers: list[str] | None = None) -> dict[str, Any]:
                 "status": result.status,
                 "record_count": len(result.records),
                 "error_classification": result.diagnostics.get("classification", ""),
+                "diagnostics": result.diagnostics,
             }
         )
         provider_results[provider] = status
@@ -919,16 +920,26 @@ def _pubmed_html_fallback_search(
     request: ProviderRequest, limit: int
 ) -> ProviderResult | None:
     """Fallback when E-utilities are blocked but the PubMed web UI is reachable."""
-    html_url = "https://pubmed.ncbi.nlm.nih.gov/?" + urllib.parse.urlencode(
-        {"term": _pubmed_web_query(request.query)}
-    )
-    html = _http_text(html_url, {"User-Agent": USER_AGENT, "Accept": "text/html,*/*"})
-    if html.status != 200 or _is_pubmed_blocked_html(html):
+    html = None
+    ids: list[str] = []
+    web_query = ""
+    for candidate_query in _pubmed_web_queries(request.query):
+        html_url = "https://pubmed.ncbi.nlm.nih.gov/?" + urllib.parse.urlencode(
+            {"term": candidate_query}
+        )
+        html = _http_text(html_url, {"User-Agent": USER_AGENT, "Accept": "text/html,*/*"})
+        if html.status != 200 or _is_pubmed_blocked_html(html):
+            continue
+        ids = _pubmed_ids_from_html(html.text)[:limit]
+        web_query = candidate_query
+        if ids:
+            break
+    if html is None or html.status != 200 or _is_pubmed_blocked_html(html):
         return None
-    ids = _pubmed_ids_from_html(html.text)[:limit]
     if not ids:
         diagnostics = _pubmed_diagnostics(html, "pubmed_html_no_ids", "web_search")
         diagnostics["fallback"] = "pubmed_web_html"
+        diagnostics["web_query_attempts"] = len(_pubmed_web_queries(request.query))
         return ProviderResult("pubmed", [], "failed", "PubMed web fallback returned no IDs", diagnostics)
 
     efetch_params = {
@@ -968,6 +979,7 @@ def _pubmed_html_fallback_search(
     records = _pubmed_records_from_html(html.text, request.params.get("term", ""))[:limit]
     diagnostics = _pubmed_diagnostics(html, "eutils_blocked_pubmed_html_fallback", "web_search")
     diagnostics["fallback"] = "pubmed_web_html"
+    diagnostics["web_query"] = web_query
     diagnostics["efetch_classification"] = (
         "ncbi_blocked_html" if _is_pubmed_blocked_html(efetch) else "unavailable"
     )
@@ -1005,6 +1017,33 @@ def _pubmed_web_query(query: str) -> str:
     text = re.sub(r"\bAND\b|\bOR\b", " ", text, flags=re.IGNORECASE)
     text = text.replace("(", " ").replace(")", " ").replace(":", " ")
     return " ".join(text.split())[:180] or "emerging contaminants river concentration"
+
+
+def _pubmed_web_queries(query: str) -> list[str]:
+    base = _pubmed_web_query(query)
+    candidates = [base]
+    lowered = base.lower()
+    water_terms = [
+        term
+        for term in ["river", "lake", "estuary", "surface water", "ocean", "seawater"]
+        if term in lowered
+    ] or ["river"]
+    measure_terms = [
+        term
+        for term in ["concentration", "occurrence", "monitoring"]
+        if term in lowered
+    ] or ["concentration"]
+    contaminant_terms = []
+    if "emerging contaminant" in lowered or "emerging contaminants" in lowered:
+        contaminant_terms.append("emerging contaminants")
+    if "micropollutant" in lowered:
+        contaminant_terms.append("micropollutant")
+    if not contaminant_terms:
+        contaminant_terms.append("emerging contaminants")
+    for contaminant in contaminant_terms:
+        for water in water_terms[:3]:
+            candidates.append(f"{contaminant} {water} {measure_terms[0]}")
+    return list(dict.fromkeys(candidate[:180] for candidate in candidates if candidate.strip()))
 
 
 def _pubmed_ids_from_html(text: str) -> list[str]:
@@ -1161,15 +1200,30 @@ def _http_json(url: str, headers: dict[str, str]) -> HttpResponse:
 
 def _http_text(url: str, headers: dict[str, str]) -> HttpResponse:
     request = urllib.request.Request(url, headers=headers)
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            text = response.read().decode("utf-8", errors="replace")
-            return HttpResponse(int(response.status), dict(response.headers.items()), text, url=url)
-    except urllib.error.HTTPError as exc:
-        text = exc.read().decode("utf-8", errors="replace") if hasattr(exc, "read") else ""
-        return HttpResponse(int(exc.code), dict(exc.headers.items()), text, error=str(exc), url=url)
-    except Exception as exc:  # pragma: no cover - network dependent
-        return HttpResponse(None, {}, "", error=str(exc), url=url)
+    last_error = ""
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                text = response.read().decode("utf-8", errors="replace")
+                return HttpResponse(int(response.status), dict(response.headers.items()), text, url=url)
+        except urllib.error.HTTPError as exc:
+            text = exc.read().decode("utf-8", errors="replace") if hasattr(exc, "read") else ""
+            return HttpResponse(int(exc.code), dict(exc.headers.items()), text, error=str(exc), url=url)
+        except Exception as exc:  # pragma: no cover - network dependent
+            last_error = str(exc)
+            if attempt < 2 and _is_retryable_transport_error(last_error):
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            return HttpResponse(None, {}, "", error=last_error, url=url)
+    return HttpResponse(None, {}, "", error=last_error, url=url)
+
+
+def _is_retryable_transport_error(error: str) -> bool:
+    lowered = error.lower()
+    return any(
+        marker in lowered
+        for marker in ["unexpected_eof", "eof occurred", "timed out", "connection reset"]
+    )
 
 
 def _generic_error(provider: str, response: HttpResponse) -> tuple[str, str, dict[str, Any]]:
