@@ -8,6 +8,7 @@ live here so callers do not import ECfinder provider internals.
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import os
 import re
@@ -977,6 +978,7 @@ def _pubmed_html_fallback_search(
                 )
 
     records = _pubmed_records_from_html(html.text, request.params.get("term", ""))[:limit]
+    records = _enrich_pubmed_html_records(records)
     diagnostics = _pubmed_diagnostics(html, "eutils_blocked_pubmed_html_fallback", "web_search")
     diagnostics["fallback"] = "pubmed_web_html"
     diagnostics["web_query"] = web_query
@@ -1105,6 +1107,84 @@ def _pubmed_records_from_html(text: str, query: str) -> list[dict[str, Any]]:
             }
         )
     return records
+
+
+def _enrich_pubmed_html_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    enriched = []
+    for record in records:
+        pmid = str(record.get("provider_record_id") or "")
+        if not pmid:
+            enriched.append(record)
+            continue
+        detail = _http_text(
+            f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
+            {"User-Agent": USER_AGENT, "Accept": "text/html,*/*"},
+        )
+        if detail.status != 200 or _is_pubmed_blocked_html(detail):
+            enriched.append(record)
+            continue
+        merged = dict(record)
+        detail_payload = _pubmed_record_detail_from_html(detail.text)
+        for key, value in detail_payload.items():
+            if value not in ("", None) and value != []:
+                merged[key] = value
+        enriched.append(merged)
+    return enriched
+
+
+def _pubmed_record_detail_from_html(text: str) -> dict[str, Any]:
+    abstract = _strip_markup(
+        " ".join(
+            re.findall(
+                r'<div class="abstract-content selected"[^>]*>.*?<p>(.*?)</p>',
+                text,
+                flags=re.DOTALL,
+            )
+        )
+    )
+    meta_description = _html_meta_content(text, "description")
+    keywords = [
+        item.strip()
+        for item in _html_meta_content(text, "keywords").split(",")
+        if item.strip() and not item.strip().lower().startswith(("pmid:", "doi:"))
+    ]
+    doi = ""
+    doi_match = re.search(r"\bdoi:\s*([^,\s<]+)", text, flags=re.IGNORECASE)
+    if doi_match:
+        doi = _normalize_doi(doi_match.group(1))
+    journal = _strip_markup(
+        _first_match(
+            text,
+            r'<button[^>]*class="journal-actions-trigger[^"]*"[^>]*>(.*?)</button>',
+        )
+    )
+    return {
+        "abstract": abstract or meta_description,
+        "doi": doi,
+        "journal": journal,
+        "keywords": keywords,
+        "language": _html_lang(text),
+    }
+
+
+def _html_meta_content(text: str, name: str) -> str:
+    match = re.search(
+        rf'<meta\s+name="{re.escape(name)}"\s+content="(?P<content>.*?)"',
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if not match:
+        match = re.search(
+            rf'<meta\s+property="og:{re.escape(name)}"\s+content="(?P<content>.*?)"',
+            text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+    return _strip_markup(html.unescape(match.group("content"))) if match else ""
+
+
+def _html_lang(text: str) -> str | None:
+    match = re.search(r"<html[^>]+lang=\"([a-zA-Z-]+)\"", text)
+    return match.group(1).lower() if match else None
 
 
 def _first_match(text: str, pattern: str) -> str:

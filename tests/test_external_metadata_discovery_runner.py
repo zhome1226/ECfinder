@@ -267,7 +267,18 @@ def test_pubmed_blocked_eutilities_uses_web_html_fallback(
         <div class="result-actions-bar bottom-bar"></div>
         """,
     )
-    fake = FakeHTTP([blocked, blocked, html, blocked])
+    detail = runner.HttpResponse(
+        200,
+        {"content-type": "text/html"},
+        """
+        <html lang="en">
+          <meta name="description" content="Detailed PubMed abstract text.">
+          <meta name="keywords" content="pmid:33839659, doi:10.1000/example, Rivers, Water Pollutants">
+          <button class="journal-actions-trigger">Water Research</button>
+        </html>
+        """,
+    )
+    fake = FakeHTTP([blocked, blocked, html, blocked, detail])
     monkeypatch.setattr(runner, "_http_text", fake.text)
     provider = runner.PubMedProvider()
 
@@ -276,6 +287,9 @@ def test_pubmed_blocked_eutilities_uses_web_html_fallback(
     assert result.status == "partial"
     assert result.diagnostics["fallback"] == "pubmed_web_html"
     assert result.records[0]["provider_record_id"] == "33839659"
+    assert result.records[0]["doi"] == "10.1000/example"
+    assert result.records[0]["abstract"] == "Detailed PubMed abstract text."
+    assert result.records[0]["language"] == "en"
     assert result.records[0]["document_type"] == "Journal Article"
 
 
@@ -303,7 +317,12 @@ def test_pubmed_web_fallback_tries_broader_queries_when_strict_query_has_no_ids(
         <div class="result-actions-bar bottom-bar"></div>
         """,
     )
-    fake = FakeHTTP([blocked, blocked, empty_html, hit_html, blocked])
+    detail = runner.HttpResponse(
+        200,
+        {"content-type": "text/html"},
+        '<html lang="en"><meta name="description" content="Detailed abstract."></html>',
+    )
+    fake = FakeHTTP([blocked, blocked, empty_html, hit_html, blocked, detail])
     monkeypatch.setattr(runner, "_http_text", fake.text)
 
     provider = runner.PubMedProvider()
