@@ -864,6 +864,49 @@ def test_run_skill_preserves_missing_document_type_and_language(
     assert record["language"] is None
 
 
+def test_run_skill_persists_multiple_provider_pages_before_import(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    queries_ref = tmp_path / "queries.json"
+    queries_ref.write_text(json.dumps([{"provider": "crossref", "query_text": "raw"}]), encoding="utf-8")
+    payload = {
+        "message": {
+            "items": [
+                {"DOI": "10.1/a", "title": ["River A"], "type": "journal-article"},
+                {"DOI": "10.1/b", "title": ["River B"], "type": "journal-article"},
+            ]
+        }
+    }
+    fake = FakeHTTP([runner.HttpResponse(200, {"content-type": "application/json"}, "", payload)])
+    monkeypatch.setattr(runner, "_http_json", fake.json)
+
+    result = runner.run_skill(
+        {
+            "skill_id": "external_metadata_discovery_v1",
+            "run_id": "run",
+            "query_id": "Q0001",
+            "iteration": 1,
+            "output_root": str(tmp_path / "out"),
+            "queries_ref": str(queries_ref),
+            "providers": ["crossref"],
+            "max_candidates": 2,
+            "page_size": 1,
+            "max_scan_depth_per_provider": 2,
+            "canonical_query": canonical(),
+            "date_from": "2006-01-01",
+            "date_to": "2026-07-10",
+            "document_types": ["journal article"],
+        },
+        tmp_path / "result.json",
+    )
+
+    pages = [Path(path) for path in result["provider_page_refs"]["crossref"]]
+    assert [page.name for page in pages] == ["crossref_page_0001.jsonl", "crossref_page_0002.jsonl"]
+    assert json.loads(pages[0].read_text(encoding="utf-8"))["retrieval_page"] == 1
+    assert json.loads(pages[1].read_text(encoding="utf-8"))["retrieval_page"] == 2
+    assert result["next_cursor_by_provider"]["crossref"] == "2"
+
+
 def test_provider_health_check_reports_configuration_without_secret_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

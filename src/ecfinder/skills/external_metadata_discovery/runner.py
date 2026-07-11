@@ -72,10 +72,17 @@ class ProviderResult:
     error: str = ""
     diagnostics: dict[str, Any] = field(default_factory=dict)
     excluded_counts: dict[str, int] = field(default_factory=dict)
+    page_records: list[list[dict[str, Any]]] = field(default_factory=list)
+    next_cursor: str = ""
 
     @property
     def available(self) -> bool:
         return self.status in {"success", "no-results", "partial"}
+
+    def pages(self, page_size: int) -> list[list[dict[str, Any]]]:
+        if self.page_records:
+            return self.page_records
+        return _chunk_records(self.records, page_size)
 
 
 class ProviderImplementation(Protocol):
@@ -219,6 +226,7 @@ def run_skill(request: dict[str, Any], output_path: Path) -> dict[str, Any]:
         "date_from": str(request.get("date_from") or ""),
         "date_to": str(request.get("date_to") or ""),
         "document_types": [str(value) for value in request.get("document_types", [])],
+        "page_size": page_size,
     }
 
     provider_page_refs: dict[str, list[str]] = {}
@@ -259,23 +267,30 @@ def run_skill(request: dict[str, Any], output_path: Path) -> dict[str, Any]:
         if result.available:
             providers_available.append(provider)
         if result.records:
-            page_path = page_root / f"{provider}_page_0001.jsonl"
-            rows = [
-                _normalize_record(
-                    raw=implementation.normalize_record(record),
-                    provider=provider,
-                    rank=rank,
-                    run_id=run_id,
-                    query_id=query_id,
-                    iteration=iteration,
-                    executable_query=provider_request.query,
-                )
-                for rank, record in enumerate(result.records, start=1)
-            ]
-            _write_jsonl(page_path, rows)
-            provider_page_refs[provider].append(str(page_path))
-            candidates.extend(rows)
-            next_cursor_by_provider[provider] = str(len(rows))
+            rank = 0
+            for page_number, page_records in enumerate(result.pages(page_size), start=1):
+                if not page_records:
+                    continue
+                page_path = page_root / f"{provider}_page_{page_number:04d}.jsonl"
+                rows = []
+                for record in page_records:
+                    rank += 1
+                    rows.append(
+                        _normalize_record(
+                            raw=implementation.normalize_record(record),
+                            provider=provider,
+                            rank=rank,
+                            run_id=run_id,
+                            query_id=query_id,
+                            iteration=iteration,
+                            executable_query=provider_request.query,
+                            retrieval_page=page_number,
+                        )
+                    )
+                _write_jsonl(page_path, rows)
+                provider_page_refs[provider].append(str(page_path))
+                candidates.extend(rows)
+            next_cursor_by_provider[provider] = result.next_cursor or str(len(result.records))
         else:
             next_cursor_by_provider[provider] = ""
         provider_states[provider] = state
@@ -309,9 +324,12 @@ class CrossrefProvider:
 
     def compile_request(self, context: dict[str, Any], limit: int) -> ProviderRequest:
         query = _crossref_query(context)
+        page_size = int(context.get("page_size") or limit or 1)
         params = {
             "query.bibliographic": query,
-            "rows": min(max(limit * 12, limit), 50),
+            "rows": min(max(page_size * 12, page_size), 50),
+            "offset": 0,
+            "_page_size": page_size,
             "filter": _join_filters(
                 [
                     _date_filter("from-pub-date", context["date_from"]),
@@ -339,9 +357,12 @@ class CrossrefProvider:
         if mailto:
             params["mailto"] = mailto
         sanitized = _sanitize_params(params)
+        sanitized.pop("_page_size", None)
+        public_params = dict(params)
+        public_params.pop("_page_size", None)
         return ProviderRequest(
             provider=self.name,
-            url=_url("https://api.crossref.org/works", params),
+            url=_url("https://api.crossref.org/works", public_params),
             sanitized_url=_url("https://api.crossref.org/works", sanitized),
             query=query,
             params=params,
@@ -349,24 +370,42 @@ class CrossrefProvider:
         )
 
     def execute(self, request: ProviderRequest, limit: int) -> ProviderResult:
-        response = _http_json(request.url, JSON_HEADERS)
-        if response.status != 200 or not isinstance(response.payload, dict):
-            status, error, diagnostics = self.classify_error(response)
-            return ProviderResult(self.name, [], status, error, diagnostics)
+        page_size = int(request.params.get("_page_size") or limit or 1)
         records: list[dict[str, Any]] = []
+        pages: list[list[dict[str, Any]]] = []
         excluded: dict[str, int] = {}
-        items = response.payload.get("message", {}).get("items", []) or []
-        for item in items:
-            reason = _crossref_exclusion_reason(item)
-            if reason:
-                excluded[reason] = excluded.get(reason, 0) + 1
-                continue
-            if _first_text(item.get("title")):
-                records.append(item)
-            if len(records) >= limit:
+        diagnostics: dict[str, Any] = {"pages_attempted": 0}
+        rows = int(request.params.get("rows") or page_size)
+        for page_index, offset in enumerate(range(0, max(limit * 12, rows), rows), start=1):
+            params = dict(request.params)
+            params.pop("_page_size", None)
+            params["offset"] = offset
+            response = _http_json(_url("https://api.crossref.org/works", params), JSON_HEADERS)
+            diagnostics["pages_attempted"] = page_index
+            if response.status != 200 or not isinstance(response.payload, dict):
+                status, error, error_diagnostics = self.classify_error(response)
+                error_diagnostics["pages_attempted"] = page_index
+                return ProviderResult(self.name, records, "partial" if records else status, error, error_diagnostics, excluded, pages)
+            page_records: list[dict[str, Any]] = []
+            items = response.payload.get("message", {}).get("items", []) or []
+            for item in items:
+                reason = _crossref_exclusion_reason(item)
+                if reason:
+                    excluded[reason] = excluded.get(reason, 0) + 1
+                    continue
+                if _first_text(item.get("title")):
+                    page_records.append(item)
+                    records.append(item)
+                if len(records) >= limit:
+                    break
+            if page_records:
+                pages.extend(_chunk_records(page_records, page_size))
+            if len(records) >= limit or not items:
+                break
+            if len(items) < rows:
                 break
         status = "success" if records else "no-results"
-        return ProviderResult(self.name, records, status, excluded_counts=excluded)
+        return ProviderResult(self.name, records[:limit], status, diagnostics=diagnostics, excluded_counts=excluded, page_records=pages)
 
     def normalize_record(self, raw: dict[str, Any]) -> dict[str, Any]:
         authors = []
@@ -409,6 +448,7 @@ class OpenAlexProvider:
 
     def compile_request(self, context: dict[str, Any], limit: int) -> ProviderRequest:
         chunks = _openalex_chunks(context["canonical_query"], context["row"])
+        page_size = int(context.get("page_size") or limit or 1)
         filter_parts = []
         if context["date_from"]:
             filter_parts.append(f"from_publication_date:{context['date_from']}")
@@ -420,7 +460,7 @@ class OpenAlexProvider:
         for chunk in chunks:
             params = {
                 "search": chunk,
-                "per-page": min(max(limit * 5, limit), 50),
+                "per-page": min(max(page_size * 5, page_size), 50),
                 "filter": ",".join(filter_parts),
                 "select": ",".join(
                     [
@@ -450,6 +490,7 @@ class OpenAlexProvider:
                     "url": _url("https://api.openalex.org/works", _sanitize_params(params)),
                     "params": _sanitize_params(params),
                     "_url": _url("https://api.openalex.org/works", params),
+                    "_params": params,
                 }
             )
         primary = executable_chunks[0]
@@ -458,42 +499,57 @@ class OpenAlexProvider:
             url=str(primary["_url"]),
             sanitized_url=str(primary["url"]),
             query=" | ".join(chunks),
-            params={"chunks": executable_chunks},
+            params={"chunks": executable_chunks, "_page_size": page_size},
             sanitized_params={"chunks": [_drop_internal(chunk) for chunk in executable_chunks]},
             chunks=[_drop_internal(chunk) for chunk in executable_chunks],
         )
 
     def execute(self, request: ProviderRequest, limit: int) -> ProviderResult:
         records: list[dict[str, Any]] = []
+        pages: list[list[dict[str, Any]]] = []
         seen: set[str] = set()
+        page_size = max(1, min(limit, int(request.params.get("_page_size") or limit or 1)))
         diagnostics: dict[str, Any] = {
             "chunks_attempted": len(request.params["chunks"]),
             "excluded_counts": {},
+            "pages_attempted": 0,
         }
         for chunk in request.params["chunks"]:
-            response = _http_json(str(chunk["_url"]), JSON_HEADERS)
-            if response.status != 200 or not isinstance(response.payload, dict):
-                status, error, error_diagnostics = self.classify_error(response)
-                error_diagnostics["chunk_query_length"] = chunk["query_length"]
-                error_diagnostics["sanitized_url"] = chunk["url"]
-                return ProviderResult(self.name, records, "partial" if records else status, error, error_diagnostics)
-            for item in response.payload.get("results", []) or []:
-                reason = _openalex_exclusion_reason(item)
-                if reason:
-                    excluded = cast(dict[str, int], diagnostics["excluded_counts"])
-                    excluded[reason] = excluded.get(reason, 0) + 1
-                    continue
-                key = _dedupe_key(item.get("id"), item.get("doi"))
-                if key in seen:
-                    continue
-                seen.add(key)
-                records.append(item)
-                if len(records) >= limit:
+            cursor = "*"
+            while len(records) < limit:
+                params = dict(chunk["_params"])
+                params["cursor"] = cursor
+                sanitized = _sanitize_params(params)
+                response = _http_json(_url("https://api.openalex.org/works", params), JSON_HEADERS)
+                diagnostics["pages_attempted"] = int(diagnostics["pages_attempted"]) + 1
+                if response.status != 200 or not isinstance(response.payload, dict):
+                    status, error, error_diagnostics = self.classify_error(response)
+                    error_diagnostics["chunk_query_length"] = chunk["query_length"]
+                    error_diagnostics["sanitized_url"] = _url("https://api.openalex.org/works", sanitized)
+                    return ProviderResult(self.name, records, "partial" if records else status, error, error_diagnostics, page_records=pages)
+                page_records: list[dict[str, Any]] = []
+                for item in response.payload.get("results", []) or []:
+                    reason = _openalex_exclusion_reason(item)
+                    if reason:
+                        excluded = cast(dict[str, int], diagnostics["excluded_counts"])
+                        excluded[reason] = excluded.get(reason, 0) + 1
+                        continue
+                    key = _dedupe_key(item.get("id"), item.get("doi"))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    page_records.append(item)
+                    records.append(item)
+                    if len(page_records) >= page_size or len(records) >= limit:
+                        break
+                if page_records:
+                    pages.append(page_records)
+                next_cursor = str((response.payload.get("meta") or {}).get("next_cursor") or "")
+                if not next_cursor or next_cursor == cursor or not response.payload.get("results"):
                     break
-            if len(records) >= limit:
-                break
+                cursor = next_cursor
         diagnostics["deduped_count"] = len(records)
-        return ProviderResult(self.name, records, "success" if records else "no-results", diagnostics=diagnostics)
+        return ProviderResult(self.name, records[:limit], "success" if records else "no-results", diagnostics=diagnostics, page_records=pages)
 
     def normalize_record(self, raw: dict[str, Any]) -> dict[str, Any]:
         primary = raw.get("primary_location") or {}
@@ -623,6 +679,7 @@ class SemanticScholarProvider:
             records,
             "success" if records else "no-results",
             excluded_counts=excluded,
+            page_records=_chunk_records(records, min(limit, int(request.params.get("limit") or limit or 1))),
         )
 
     def normalize_record(self, raw: dict[str, Any]) -> dict[str, Any]:
@@ -673,6 +730,7 @@ class PubMedProvider:
             "db": "pubmed",
             "term": query,
             "retmax": str(min(limit, 50)),
+            "retstart": "0",
             "retmode": "json",
             "email": email,
             "tool": tool,
@@ -720,6 +778,7 @@ class PubMedProvider:
         ids = payload.get("esearchresult", {}).get("idlist", [])
         if not ids:
             return ProviderResult(self.name, [], "no-results")
+        page_size = max(1, min(limit, int(request.params.get("retmax") or limit or 1)))
         efetch_params = {
             "db": "pubmed",
             "id": ",".join(str(item) for item in ids[:limit]),
@@ -748,7 +807,14 @@ class PubMedProvider:
             for record in _pubmed_records(root, request.params.get("term", ""))
             if record.get("title")
         ][:limit]
-        return ProviderResult(self.name, records, "success" if records else "no-results")
+        return ProviderResult(
+            self.name,
+            records,
+            "success" if records else "no-results",
+            diagnostics={"pages_attempted": 1},
+            page_records=_chunk_records(records, page_size),
+            next_cursor=str(len(ids[:limit])),
+        )
 
     def normalize_record(self, raw: dict[str, Any]) -> dict[str, Any]:
         return raw
@@ -1620,6 +1686,11 @@ def _execution_status(source_status: dict[str, str], total: int) -> str:
     return "success"
 
 
+def _chunk_records(records: list[dict[str, Any]], page_size: int) -> list[list[dict[str, Any]]]:
+    page_size = max(1, page_size)
+    return [records[index : index + page_size] for index in range(0, len(records), page_size)]
+
+
 def _normalize_record(
     *,
     raw: dict[str, Any],
@@ -1629,6 +1700,7 @@ def _normalize_record(
     query_id: str,
     iteration: int,
     executable_query: str,
+    retrieval_page: int = 1,
 ) -> dict[str, Any]:
     provider_record_id = str(raw.get("provider_record_id") or raw.get("doi") or raw.get("url") or f"{provider}:{rank}")
     return {
@@ -1637,7 +1709,7 @@ def _normalize_record(
         "source_record_id": provider_record_id,
         "provider_record_id": provider_record_id,
         "rank": rank,
-        "retrieval_page": 1,
+        "retrieval_page": retrieval_page,
         "query_text": executable_query,
         "run_id": run_id,
         "query_id": query_id,
