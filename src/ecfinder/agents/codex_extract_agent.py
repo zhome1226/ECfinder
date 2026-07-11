@@ -36,7 +36,8 @@ def prepare_extract_tasks(
     for chunk_id in selected_ids:
         public = public_chunks.get(chunk_id, {})
         raw = raw_chunks.get(chunk_id, {})
-        source = sources.get(public.get("source_id") or raw.get("source_id"), {})
+        source_id = str(public.get("source_id") or raw.get("source_id") or "")
+        source = sources.get(source_id, {})
         packets.append(
             {
                 "task_type": "codex_extract_chunk",
@@ -61,4 +62,3 @@ def _eligible_section(chunk: dict) -> bool:
 
 def _source_metadata(source: dict) -> dict:
     return {key: source.get(key) for key in ["source_id", "doi", "title", "year", "journal", "url", "landing_page_url"]}
-

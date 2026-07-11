@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
-
 from ecfinder.state.common import utc_now, write_json
 
 

@@ -809,6 +809,27 @@ def test_pubmed_html_or_empty_response_is_clear_error(
     assert result.diagnostics["classification"] == classification
 
 
+def test_pubmed_misuse_redirect_is_classified_as_ncbi_blocked_html(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NCBI_EMAIL", "configured@example.invalid")
+    blocked = runner.HttpResponse(
+        200,
+        {"content-type": "text/html"},
+        "<html><title>NCBI - WWW Error Blocked Diagnostic</title></html>",
+        url="https://misuse.ncbi.nlm.nih.gov/error/abuse.shtml?orig_args=/entrez/eutils/esearch.fcgi",
+    )
+    fake = FakeHTTP([blocked, blocked, blocked, blocked, blocked, blocked])
+    monkeypatch.setattr(runner, "_http_text", fake.text)
+    monkeypatch.setattr(runner, "_pubmed_html_fallback_search", lambda _request, _limit: None)
+    provider = runner.PubMedProvider()
+
+    result = provider.execute(provider.compile_request(context(), 1), 1)
+
+    assert result.status == "failed"
+    assert result.diagnostics["classification"] == "ncbi_blocked_html"
+
+
 def test_run_skill_preserves_missing_document_type_and_language(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

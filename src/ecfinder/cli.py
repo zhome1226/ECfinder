@@ -28,7 +28,6 @@ from ecfinder.review.validate_outputs import validate_outputs
 from ecfinder.review.validate_outputs import validate_stage2_outputs
 from ecfinder.search.search_runner import run_search
 from ecfinder.skills_inventory import write_inventory
-from ecfinder.utils.logging import write_jsonl
 
 
 def repo_root_from_cwd() -> Path:
@@ -355,9 +354,9 @@ def write_stage2_1_audit(root: Path) -> dict:
 
 def _write_auxiliary_summary(root: Path, auxiliary: list[dict]) -> None:
     examples = []
-    sources = Counter()
+    sources: Counter[str] = Counter()
     for record in auxiliary:
-        sources[record.get("title") or record.get("source_id")] += 1
+        sources[str(record.get("title") or record.get("source_id") or "unknown")] += 1
         examples.append(
             f"- {(record.get('parent_compound') or {}).get('name')} -> {(record.get('product_compound') or {}).get('name')}"
         )

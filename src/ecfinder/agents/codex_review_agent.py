@@ -16,8 +16,8 @@ def prepare_review_tasks(root: str | Path, input_file: str = "pfas_transformatio
     records = list(read_jsonl(repo_root / "data" / "extracted" / input_file))
     packets = []
     for record in records:
-        source = sources.get(record.get("source_id"), {})
-        chunk = raw_chunks.get(record.get("chunk_id"), {})
+        source = sources.get(str(record.get("source_id") or ""), {})
+        chunk = raw_chunks.get(str(record.get("chunk_id") or ""), {})
         packets.append(
             {
                 "task_type": "codex_review_record",
@@ -31,4 +31,3 @@ def prepare_review_tasks(root: str | Path, input_file: str = "pfas_transformatio
         )
     write_task_packets(repo_root, "codex_review_tasks", packets)
     return packets
-

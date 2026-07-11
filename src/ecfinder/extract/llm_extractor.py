@@ -48,7 +48,7 @@ def extract_from_chunks_stub(root: str | Path) -> list[dict]:
         text = chunk.get("text") or ""
         if not PROCESS_RE.search(text) or not ENV_RE.search(text):
             continue
-        names = []
+        names: list[str] = []
         for match in PFAS_NAME_RE.finditer(text):
             name = " ".join(match.group(0).split())
             if name.lower() not in {item.lower() for item in names}:
@@ -84,8 +84,8 @@ def extract_from_chunks_stub(root: str | Path) -> list[dict]:
             "extraction_method": "regex_fallback_needs_review",
             "chunk_text_hash": sha256_text(text),
         }
-        record["parent_normalized"] = normalize_name(record.get("parent_name"))
-        record["product_normalized"] = normalize_name(record.get("product_name"))
+        record["parent_normalized"] = normalize_name(str(record.get("parent_name") or ""))
+        record["product_normalized"] = normalize_name(str(record.get("product_name") or ""))
         assign_record_id(record)
         record["schema_errors"] = validate_record_shape(record)
         record["reviewer_status"] = "unreviewed"

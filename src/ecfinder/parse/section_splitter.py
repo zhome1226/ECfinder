@@ -9,8 +9,8 @@ SECTION_RE = re.compile(r"^(abstract|introduction|methods?|results?|discussion|c
 
 
 def split_sections(source_id: str, text: str) -> list[dict]:
-    current = {"heading": "body", "lines": []}
-    sections = []
+    current: dict[str, str | list[str]] = {"heading": "body", "lines": []}
+    sections: list[dict[str, str | list[str]]] = []
     for line in text.splitlines():
         stripped = line.strip()
         if not stripped:
@@ -18,7 +18,9 @@ def split_sections(source_id: str, text: str) -> list[dict]:
         if SECTION_RE.match(stripped) and current["lines"]:
             sections.append(current)
             current = {"heading": stripped[:120], "lines": []}
-        current["lines"].append(stripped)
+        lines = current["lines"]
+        if isinstance(lines, list):
+            lines.append(stripped)
     if current["lines"]:
         sections.append(current)
     return [

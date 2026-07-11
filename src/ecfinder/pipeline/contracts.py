@@ -127,8 +127,9 @@ def read_jsonl_result(path: Path) -> JsonlReadResult:
 def read_csv_rows(path: Path) -> tuple[list[dict[str, str]], list[str] | None]:
     with path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
-        rows = list(reader)
-        return rows, reader.fieldnames
+        rows: list[dict[str, str]] = [dict(row) for row in reader]
+        fieldnames = list(reader.fieldnames) if reader.fieldnames is not None else None
+        return rows, fieldnames
 
 
 def get_nested(record: dict[str, Any], dotted: str) -> Any:

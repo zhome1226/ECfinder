@@ -1001,7 +1001,6 @@ class StreamingSupervisor:
         self.index_batch_artifacts()
         strict_jsonl_ok = self.strict_jsonl_audit_passed()
         blocked = sum(1 for row in self.status_rows if row.get("overall_status") == "blocked_external")
-        manual = sum(1 for row in self.status_rows if row.get("overall_status") == "manual_screen")
         include = sum(1 for row in self.screening_rows if row.get("screening_decision") == "include_for_fulltext")
         excluded = sum(1 for row in self.screening_rows if row.get("screening_decision") == "exclude")
         chunks_seen = len(self.chunk_rows)

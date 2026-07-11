@@ -1267,10 +1267,19 @@ def _filter_pubmed_records(records: list[dict[str, Any]], limit: int) -> list[di
 
 
 def _is_pubmed_blocked_html(response: HttpResponse) -> bool:
+    text = response.text.lower()
+    final_url = response.url.lower()
     return (
         response.status == 200
         and "html" in _content_type(response).lower()
-        and "blocked diagnostic" in response.text.lower()
+        and (
+            "blocked diagnostic" in text
+            or "misuse.ncbi.nlm.nih.gov" in final_url
+            or "error/abuse.shtml" in final_url
+            or "automated queries" in text
+            or "possible misuse" in text
+            or "ncbi - www error blocked" in text
+        )
     )
 
 

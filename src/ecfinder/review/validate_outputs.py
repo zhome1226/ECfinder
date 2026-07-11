@@ -29,9 +29,7 @@ STAGE2_JSONL_FILES = (
 
 def validate_outputs(root: str | Path) -> dict:
     repo_root = Path(root)
-    validated_path = repo_root / "data" / "reviewed" / "pfas_transformation_records_validated.jsonl"
     validated_csv = repo_root / "data" / "reviewed" / "pfas_transformation_records_validated.csv"
-    auxiliary_path = repo_root / "data" / "reviewed" / "auxiliary_engineered_biological_records.jsonl"
     auxiliary_csv = repo_root / "data" / "reviewed" / "auxiliary_engineered_biological_records.csv"
 
     jsonl_records: dict[str, list[dict]] = {}

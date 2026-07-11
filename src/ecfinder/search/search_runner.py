@@ -9,7 +9,7 @@ import urllib.request
 from pathlib import Path
 from typing import Iterable
 
-from ecfinder.search.query_builder import QuerySpec, dedup_key, load_queries, source_id_for
+from ecfinder.search.query_builder import dedup_key, load_queries, source_id_for
 from ecfinder.utils.logging import log_agent_run, utc_now, write_jsonl
 
 

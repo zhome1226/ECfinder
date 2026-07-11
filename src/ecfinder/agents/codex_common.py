@@ -18,15 +18,27 @@ def load_prompt(root: str | Path, prompt_name: str) -> str:
 
 
 def load_sources(root: str | Path) -> dict[str, dict]:
-    return {row.get("source_id"): row for row in read_jsonl(Path(root) / "data" / "interim" / "search_results.jsonl")}
+    return {
+        str(row.get("source_id")): row
+        for row in read_jsonl(Path(root) / "data" / "interim" / "search_results.jsonl")
+        if row.get("source_id")
+    }
 
 
 def load_public_chunks(root: str | Path) -> dict[str, dict]:
-    return {row.get("chunk_id"): row for row in read_jsonl(Path(root) / "data" / "interim" / "chunks.jsonl")}
+    return {
+        str(row.get("chunk_id")): row
+        for row in read_jsonl(Path(root) / "data" / "interim" / "chunks.jsonl")
+        if row.get("chunk_id")
+    }
 
 
 def load_raw_chunks(root: str | Path) -> dict[str, dict]:
-    return {row.get("chunk_id"): row for row in read_jsonl(Path(root) / "data" / "raw" / "chunks" / "chunk_text.jsonl")}
+    return {
+        str(row.get("chunk_id")): row
+        for row in read_jsonl(Path(root) / "data" / "raw" / "chunks" / "chunk_text.jsonl")
+        if row.get("chunk_id")
+    }
 
 
 def write_task_packets(root: str | Path, name: str, packets: list[dict]) -> Path:
@@ -36,4 +48,3 @@ def write_task_packets(root: str | Path, name: str, packets: list[dict]) -> Path
         packet.setdefault("codex_mode_note", CODEX_MODE_NOTE)
     write_jsonl(path, packets)
     return path
-

@@ -20,8 +20,8 @@ def prepare_reextract_tasks(root: str | Path, max_attempts: int = 2) -> list[dic
         attempts = int(record.get("reextract_attempts") or 0)
         if attempts >= max_attempts:
             continue
-        chunk = raw_chunks.get(record.get("chunk_id"), {})
-        source = sources.get(record.get("source_id"), {})
+        chunk = raw_chunks.get(str(record.get("chunk_id") or ""), {})
+        source = sources.get(str(record.get("source_id") or ""), {})
         packets.append(
             {
                 "task_type": "codex_reextract_chunk",
@@ -37,4 +37,3 @@ def prepare_reextract_tasks(root: str | Path, max_attempts: int = 2) -> list[dic
         )
     write_task_packets(repo_root, "codex_reextract_tasks", packets)
     return packets
-

@@ -12,18 +12,14 @@ from ecfinder.pipeline.contracts import clean_database_counts, read_jsonl_strict
 from ecfinder.pipeline.exceptions import PipelineGateError
 from ecfinder.pipeline.queues import ERROR_QUEUE_REL, clear_error_queue, append_error, ensure_queues, queue_counts
 from ecfinder.pipeline.report import (
-    write_contracts_report,
     write_diagnosis_report,
     write_preflight_report,
-    write_runbook,
 )
 from ecfinder.pipeline.state import (
     load_state,
     mark_failed,
     mark_gate,
     mark_step,
-    mark_success,
-    save_state,
     start_run,
     update_counters,
     write_event,
