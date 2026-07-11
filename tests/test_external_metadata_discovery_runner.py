@@ -181,6 +181,44 @@ def test_pubmed_json_esearch_and_xml_efetch_parse(monkeypatch: pytest.MonkeyPatc
     assert normalized["language"] == "eng"
 
 
+def test_pubmed_filters_publication_types_after_efetch(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NCBI_EMAIL", "configured@example.invalid")
+    monkeypatch.setenv("NCBI_TOOL", "ECMonitor")
+    esearch = runner.HttpResponse(
+        200,
+        {"content-type": "application/json"},
+        '{"esearchresult":{"idlist":["123","456"]}}',
+    )
+    efetch = runner.HttpResponse(
+        200,
+        {"content-type": "text/xml"},
+        """
+        <PubmedArticleSet>
+        <PubmedArticle><MedlineCitation>
+        <PMID>123</PMID><Article><ArticleTitle>Dataset only</ArticleTitle>
+        <Abstract><AbstractText>Dataset record.</AbstractText></Abstract>
+        <Journal><Title>Scientific Data</Title><JournalIssue><PubDate><Year>2025</Year></PubDate></JournalIssue></Journal>
+        <Language>eng</Language><PublicationTypeList><PublicationType>Dataset</PublicationType></PublicationTypeList>
+        </Article></MedlineCitation></PubmedArticle>
+        <PubmedArticle><MedlineCitation>
+        <PMID>456</PMID><Article><ArticleTitle>Article record</ArticleTitle>
+        <Abstract><AbstractText>Article record.</AbstractText></Abstract>
+        <Journal><Title>Water Research</Title><JournalIssue><PubDate><Year>2026</Year></PubDate></JournalIssue></Journal>
+        <Language>eng</Language><PublicationTypeList><PublicationType>Journal Article</PublicationType><PublicationType>Dataset</PublicationType></PublicationTypeList>
+        </Article></MedlineCitation></PubmedArticle>
+        </PubmedArticleSet>
+        """,
+    )
+    fake = FakeHTTP([esearch, efetch])
+    monkeypatch.setattr(runner, "_http_text", fake.text)
+    provider = runner.PubMedProvider()
+    result = provider.execute(provider.compile_request(context(), 2), 2)
+    assert result.status == "success"
+    assert len(result.records) == 1
+    assert result.records[0]["provider_record_id"] == "456"
+    assert result.records[0]["document_type"] == "Journal Article"
+
+
 def test_pubmed_blocked_html_retries_without_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("NCBI_EMAIL", "configured@example.invalid")
     monkeypatch.setenv("NCBI_TOOL", "ECMonitor")

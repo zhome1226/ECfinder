@@ -623,7 +623,11 @@ class PubMedProvider:
                 "PubMed EFetch returned malformed XML",
                 _pubmed_diagnostics(efetch, "malformed_xml", "efetch"),
             )
-        records = [record for record in _pubmed_records(root) if record.get("title")][:limit]
+        records = [
+            record
+            for record in _pubmed_records(root, request.params.get("term", ""))
+            if record.get("title")
+        ][:limit]
         return ProviderResult(self.name, records, "success" if records else "no-results")
 
     def normalize_record(self, raw: dict[str, Any]) -> dict[str, Any]:
@@ -782,11 +786,14 @@ def _is_pubmed_blocked_html(response: HttpResponse) -> bool:
     )
 
 
-def _pubmed_records(root: ET.Element) -> list[dict[str, Any]]:
+def _pubmed_records(root: ET.Element, query: str = "") -> list[dict[str, Any]]:
     records = []
     for article in root.findall(".//PubmedArticle"):
         pmid = article.findtext(".//PMID") or ""
         publication_types = [node.text or "" for node in article.findall(".//PublicationType") if node.text]
+        eligible_types = _eligible_pubmed_publication_types(publication_types, query)
+        if not eligible_types:
+            continue
         records.append(
             {
                 "source_provider": "pubmed",
@@ -800,11 +807,32 @@ def _pubmed_records(root: ET.Element) -> list[dict[str, Any]]:
                 "keywords": [],
                 "url": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/" if pmid else "",
                 "open_access_hint": None,
-                "document_type": publication_types[0] if publication_types else None,
+                "document_type": eligible_types[0],
                 "language": article.findtext(".//Language"),
             }
         )
     return records
+
+
+def _eligible_pubmed_publication_types(publication_types: list[str], query: str) -> list[str]:
+    if not publication_types:
+        return []
+    allowed = _pubmed_allowed_publication_types(query)
+    if not allowed:
+        return publication_types
+    return [item for item in publication_types if item.casefold() in allowed]
+
+
+def _pubmed_allowed_publication_types(query: str) -> set[str]:
+    allowed = set()
+    marker = '"[Publication Type]'
+    for fragment in query.split(marker):
+        if '"' not in fragment:
+            continue
+        term = fragment.rsplit('"', 1)[-1].strip()
+        if term:
+            allowed.add(term.casefold())
+    return allowed
 
 
 def _pubmed_doi(article: ET.Element) -> str:
