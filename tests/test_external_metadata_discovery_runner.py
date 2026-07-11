@@ -388,6 +388,46 @@ def test_semantic_scholar_429_retries(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.status == "no-results"
 
 
+def test_semantic_scholar_review_and_matrix_records_are_filtered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = {
+        "data": [
+            {
+                "paperId": "review",
+                "title": "PFAS as a contaminant of emerging concern in surface water: a review",
+                "abstract": "This review summarizes occurrence in surface water.",
+                "publicationTypes": ["Review"],
+            },
+            {
+                "paperId": "drinking",
+                "title": "Emerging contaminants in drinking water",
+                "abstract": "Measured concentrations in drinking water treatment plants.",
+                "publicationTypes": ["JournalArticle"],
+            },
+            {
+                "paperId": "river",
+                "title": "Emerging contaminants in river surface water",
+                "abstract": "Measured concentrations and occurrence in river water.",
+                "publicationTypes": ["JournalArticle"],
+                "externalIds": {"DOI": "10.1/river"},
+            },
+        ]
+    }
+    fake = FakeHTTP([runner.HttpResponse(200, {"content-type": "application/json"}, "", payload)])
+    monkeypatch.setattr(runner, "_http_json", fake.json)
+
+    provider = runner.SemanticScholarProvider()
+    result = provider.execute(provider.compile_request(context(), 1), 1)
+
+    assert result.status == "success"
+    assert result.records[0]["paperId"] == "river"
+    assert result.excluded_counts == {
+        "semantic_scholar_ineligible_publication_type": 1,
+        "ineligible_drinking_or_treatment_water": 1,
+    }
+
+
 def test_pubmed_json_esearch_and_xml_efetch_parse(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("NCBI_EMAIL", "configured@example.invalid")
     monkeypatch.setenv("NCBI_TOOL", "ECMonitor")

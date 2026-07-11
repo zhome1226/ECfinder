@@ -606,8 +606,24 @@ class SemanticScholarProvider:
                 "Semantic Scholar response missing data array",
                 {"classification": "invalid_response_shape"},
             )
-        records = [item for item in data if isinstance(item, dict) and item.get("title")][:limit]
-        return ProviderResult(self.name, records, "success" if records else "no-results")
+        records: list[dict[str, Any]] = []
+        excluded: dict[str, int] = {}
+        for item in data:
+            if not isinstance(item, dict) or not item.get("title"):
+                continue
+            reason = _semantic_scholar_exclusion_reason(item)
+            if reason:
+                excluded[reason] = excluded.get(reason, 0) + 1
+                continue
+            records.append(item)
+            if len(records) >= limit:
+                break
+        return ProviderResult(
+            self.name,
+            records,
+            "success" if records else "no-results",
+            excluded_counts=excluded,
+        )
 
     def normalize_record(self, raw: dict[str, Any]) -> dict[str, Any]:
         external = raw.get("externalIds") or {}
@@ -949,6 +965,30 @@ def _openalex_exclusion_reason(item: dict[str, Any]) -> str:
         return "openalex_missing_surface_water_signal"
     if not _has_monitoring_or_concentration_signal(title, abstract):
         return "openalex_missing_monitoring_concentration_signal"
+    return ""
+
+
+def _semantic_scholar_exclusion_reason(item: dict[str, Any]) -> str:
+    title = str(item.get("title") or "")
+    abstract = str(item.get("abstract") or "")
+    publication_types = [
+        str(value).casefold()
+        for value in item.get("publicationTypes", []) or []
+        if value is not None
+    ]
+    if any(value in {"review", "systematicreview", "bookchapter"} for value in publication_types):
+        return "semantic_scholar_ineligible_publication_type"
+    if _looks_like_review_article(title, abstract):
+        return "semantic_scholar_review_article"
+    if _looks_like_editorial_article(title, abstract):
+        return "semantic_scholar_editorial_article"
+    matrix_reason = _ineligible_matrix_reason(title, abstract)
+    if matrix_reason:
+        return matrix_reason
+    if not _has_surface_water_signal(title, abstract):
+        return "semantic_scholar_missing_surface_water_signal"
+    if not _has_monitoring_or_concentration_signal(title, abstract):
+        return "semantic_scholar_missing_monitoring_concentration_signal"
     return ""
 
 
