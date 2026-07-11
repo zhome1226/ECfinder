@@ -335,7 +335,7 @@ class CrossrefProvider:
                 ]
             ),
         }
-        mailto = os.environ.get("CROSSREF_MAILTO", "").strip()
+        mailto = _crossref_mailto()
         if mailto:
             params["mailto"] = mailto
         sanitized = _sanitize_params(params)
@@ -765,7 +765,7 @@ def _provider_state(provider: str, context: dict[str, Any], requested_limit: int
 
 def _auth_status(provider: str) -> dict[str, str]:
     if provider == "crossref":
-        return {"CROSSREF_MAILTO": _configured("CROSSREF_MAILTO")}
+        return {"CROSSREF_MAILTO": "configured" if _crossref_mailto() else "missing"}
     if provider == "openalex":
         return {"OPENALEX_API_KEY": _configured("OPENALEX_API_KEY")}
     if provider == "semantic_scholar":
@@ -791,6 +791,12 @@ def _environment_validation() -> dict[str, str]:
             "CROSSREF_MAILTO",
         ]
     }
+
+
+def _crossref_mailto() -> str:
+    return os.environ.get("CROSSREF_MAILTO", "").strip() or os.environ.get(
+        "NCBI_EMAIL", ""
+    ).strip()
 
 
 def _provider_authentication_status(provider: str) -> str:

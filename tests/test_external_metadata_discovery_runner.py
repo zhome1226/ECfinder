@@ -855,3 +855,17 @@ def test_provider_health_check_reports_configuration_without_secret_values(
     assert result["providers"]["semantic_scholar"]["status"] == "not-run"
     assert "secret" not in dumped
     assert "configured@example.invalid" not in dumped
+
+
+def test_crossref_uses_ncbi_email_as_mailto_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("CROSSREF_MAILTO", raising=False)
+    monkeypatch.setenv("NCBI_EMAIL", "configured@example.invalid")
+
+    request = runner.CrossrefProvider().compile_request(context(), 1)
+
+    assert request.params["mailto"] == "configured@example.invalid"
+    assert request.sanitized_params["mailto"] == "configured"
+    assert "configured@example.invalid" not in request.sanitized_url
+    assert runner._auth_status("crossref") == {"CROSSREF_MAILTO": "configured"}
