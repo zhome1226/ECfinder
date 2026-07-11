@@ -311,7 +311,7 @@ class CrossrefProvider:
         query = _crossref_query(context)
         params = {
             "query.bibliographic": query,
-            "rows": min(max(limit * 5, limit), 50),
+            "rows": min(max(limit * 12, limit), 50),
             "filter": _join_filters(
                 [
                     _date_filter("from-pub-date", context["date_from"]),
@@ -420,7 +420,7 @@ class OpenAlexProvider:
         for chunk in chunks:
             params = {
                 "search": chunk,
-                "per-page": min(limit, 50),
+                "per-page": min(max(limit * 5, limit), 50),
                 "filter": ",".join(filter_parts),
                 "select": ",".join(
                     [
@@ -466,7 +466,10 @@ class OpenAlexProvider:
     def execute(self, request: ProviderRequest, limit: int) -> ProviderResult:
         records: list[dict[str, Any]] = []
         seen: set[str] = set()
-        diagnostics: dict[str, Any] = {"chunks_attempted": len(request.params["chunks"])}
+        diagnostics: dict[str, Any] = {
+            "chunks_attempted": len(request.params["chunks"]),
+            "excluded_counts": {},
+        }
         for chunk in request.params["chunks"]:
             response = _http_json(str(chunk["_url"]), JSON_HEADERS)
             if response.status != 200 or not isinstance(response.payload, dict):
@@ -475,6 +478,11 @@ class OpenAlexProvider:
                 error_diagnostics["sanitized_url"] = chunk["url"]
                 return ProviderResult(self.name, records, "partial" if records else status, error, error_diagnostics)
             for item in response.payload.get("results", []) or []:
+                reason = _openalex_exclusion_reason(item)
+                if reason:
+                    excluded = cast(dict[str, int], diagnostics["excluded_counts"])
+                    excluded[reason] = excluded.get(reason, 0) + 1
+                    continue
                 key = _dedupe_key(item.get("id"), item.get("doi"))
                 if key in seen:
                     continue
@@ -821,7 +829,7 @@ def _crossref_query(context: dict[str, Any]) -> str:
     canonical = context["canonical_query"]
     terms = []
     terms.extend(_terms(canonical, "emerging_contaminant_terms", limit=4))
-    terms.extend(_terms(canonical, "surface_water_terms", limit=4))
+    terms.extend(_preferred_surface_water_terms(canonical, limit=4))
     terms.extend(_terms(canonical, "monitoring_and_concentration_terms", limit=3))
     if not terms:
         return str(context["row"].get("query_text") or context["row"].get("compiled_query") or "").strip()
@@ -830,7 +838,7 @@ def _crossref_query(context: dict[str, Any]) -> str:
 
 def _openalex_chunks(canonical: dict[str, Any], row: dict[str, Any]) -> list[str]:
     emerging = _terms(canonical, "emerging_contaminant_terms", limit=3) or ["emerging contaminants"]
-    water = _terms(canonical, "surface_water_terms", limit=3) or ["surface water"]
+    water = _preferred_surface_water_terms(canonical, limit=3) or ["surface water"]
     monitoring = _terms(canonical, "monitoring_and_concentration_terms", limit=2) or ["monitoring"]
     chunks = []
     for index, term in enumerate(emerging):
@@ -851,7 +859,7 @@ def _openalex_chunks(canonical: dict[str, Any], row: dict[str, Any]) -> list[str
 def _semantic_query(canonical: dict[str, Any], row: dict[str, Any]) -> str:
     terms = []
     terms.extend(_terms(canonical, "emerging_contaminant_terms", limit=2) or ["emerging contaminants"])
-    terms.extend(_terms(canonical, "surface_water_terms", limit=2) or ["surface water"])
+    terms.extend(_preferred_surface_water_terms(canonical, limit=2) or ["surface water"])
     terms.extend(_terms(canonical, "monitoring_and_concentration_terms", limit=1) or ["monitoring"])
     query = " ".join(_plain_term(term) for term in terms)
     if not query.strip():
@@ -889,13 +897,160 @@ def _pubmed_query(context: dict[str, Any]) -> str:
 def _crossref_exclusion_reason(item: dict[str, Any]) -> str:
     doi = _normalize_doi(item.get("DOI"))
     title = _first_text(item.get("title"))
+    abstract = _strip_markup(str(item.get("abstract", "") or ""))
     item_type = str(item.get("type") or "").lower()
+    journal = _first_text(item.get("container-title")).lower()
+    subtype = " ".join(
+        str(item.get(key) or "").lower()
+        for key in ["subtype", "genre", "content-domain"]
+    )
     if item_type in {"peer-review", "peer_review", "posted-content"}:
         return "crossref_peer_review_or_posted_content"
+    if item_type in {"proceedings-article", "proceedings", "editorial", "letter"}:
+        return "crossref_ineligible_publication_type"
+    if any(token in subtype for token in ["review", "conference", "proceedings"]):
+        return "crossref_ineligible_publication_type"
     if re.search(r"/review\d+\b", doi, flags=re.IGNORECASE):
         return "doi_review_artifact"
     if title.lower().startswith("review for "):
         return "title_review_artifact"
+    if title.lower().startswith("next step of:") or abstract.lower().startswith("new module based on:"):
+        return "crossref_module_artifact"
+    if journal == "researchequals":
+        return "crossref_module_artifact"
+    if _looks_like_editorial_article(title, abstract):
+        return "crossref_editorial_article"
+    if _looks_like_review_article(title, abstract):
+        return "crossref_review_article"
+    matrix_reason = _ineligible_matrix_reason(title, abstract)
+    if matrix_reason:
+        return matrix_reason
+    return ""
+
+
+def _openalex_exclusion_reason(item: dict[str, Any]) -> str:
+    title = str(item.get("title") or item.get("display_name") or "")
+    abstract = _inverted_index_to_text(item.get("abstract_inverted_index"))
+    item_type = str(item.get("type") or "").lower()
+    if item_type in {"review", "book-chapter", "proceedings-article"}:
+        return "openalex_ineligible_publication_type"
+    if _looks_like_review_article(title, abstract):
+        return "openalex_review_article"
+    matrix_reason = _ineligible_matrix_reason(title, abstract)
+    if matrix_reason:
+        return matrix_reason
+    if not _has_surface_water_signal(title, abstract):
+        return "openalex_missing_surface_water_signal"
+    if not _has_monitoring_or_concentration_signal(title, abstract):
+        return "openalex_missing_monitoring_concentration_signal"
+    return ""
+
+
+def _preferred_surface_water_terms(canonical: dict[str, Any], limit: int) -> list[str]:
+    terms = _terms(canonical, "surface_water_terms", limit=100)
+    if not terms:
+        return []
+    broad = {"ocean", "open ocean", "sea"}
+    preferred_order = [
+        "surface water",
+        "ambient surface water",
+        "river",
+        "stream",
+        "creek",
+        "lake",
+        "reservoir",
+        "estuary",
+        "wetland",
+        "canal",
+        "coastal water",
+        "seawater",
+        "marine water",
+        "bay",
+        "lagoon",
+    ]
+    by_plain = {_plain_term(term).lower(): term for term in terms}
+    ordered = [by_plain[value] for value in preferred_order if value in by_plain]
+    ordered.extend(term for term in terms if _plain_term(term).lower() not in broad and term not in ordered)
+    if not ordered and len(ordered) < limit:
+        ordered.extend(term for term in terms if term not in ordered)
+    return ordered[:limit]
+
+
+def _looks_like_review_article(title: str, abstract: str) -> bool:
+    text = f"{title} {abstract}".lower()
+    review_patterns = [
+        r"\bcritical review\b",
+        r"\bsystematic review\b",
+        r"\bscoping review\b",
+        r"\breview aims to\b",
+        r"\bthis review\b",
+        r"\bwe review\b",
+        r"\boverview of\b",
+        r"\bupdated overview\b",
+        r"\bcurrent status of .* research\b",
+    ]
+    return any(re.search(pattern, text) for pattern in review_patterns)
+
+
+def _looks_like_editorial_article(title: str, abstract: str) -> bool:
+    text = f"{title} {abstract}".lower()
+    editorial_patterns = [
+        r"\binaugural editorial\b",
+        r"\beditorial\b",
+        r"\bperspective\b",
+        r"\bcommentary\b",
+    ]
+    return any(re.search(pattern, text) for pattern in editorial_patterns)
+
+
+def _has_surface_water_signal(title: str, abstract: str) -> bool:
+    text = f"{title} {abstract}".lower()
+    patterns = [
+        r"\bsurface water\b",
+        r"\briver(s)?\b",
+        r"\blake(s)?\b",
+        r"\bestuar(y|ies|ine)\b",
+        r"\bstream(s)?\b",
+        r"\breservoir(s)?\b",
+        r"\bwetland(s)?\b",
+        r"\bcanal(s)?\b",
+        r"\bcoastal water(s)?\b",
+        r"\bseawater\b",
+        r"\bmarine water(s)?\b",
+        r"\bwater sample(s)?\b",
+    ]
+    return any(re.search(pattern, text) for pattern in patterns)
+
+
+def _has_monitoring_or_concentration_signal(title: str, abstract: str) -> bool:
+    text = f"{title} {abstract}".lower()
+    patterns = [
+        r"\bmonitor(ed|ing)?\b",
+        r"\boccurrence\b",
+        r"\bconcentration(s)?\b",
+        r"\bquantif(y|ied|ication)\b",
+        r"\bdetected\b",
+        r"\bmeasured\b",
+        r"\bng/l\b",
+        r"\bµg/l\b",
+        r"\bug/l\b",
+    ]
+    return any(re.search(pattern, text) for pattern in patterns)
+
+
+def _ineligible_matrix_reason(title: str, abstract: str) -> str:
+    text = f"{title} {abstract}".lower()
+    ineligible_patterns = [
+        (r"\bfoodstuff(s)?\b|\bfood(s)?\b|\bfruit(s)?\b|\bvegetable(s)?\b|\bspice(s)?\b|\bcereal(s)?\b|\binfant formula\b|\bdried herb(s)?\b", "ineligible_food_matrix"),
+        (r"\bpaint(s)?\b|\bconsumer product(s)?\b|\btextile(s)?\b|\bpackaging\b", "ineligible_product_matrix"),
+        (r"\bdrinking water(s)?\b|\bdwtp(s)?\b|\bwater treatment plant(s)?\b|\btreated water(s)?\b|\btap water\b", "ineligible_drinking_or_treatment_water"),
+        (r"\bwastewater(s)?\b|\bwaste water(s)?\b|\bsewage\b|\beffluent(s)?\b|\bwwtp(s)?\b", "ineligible_wastewater_matrix"),
+        (r"\bsoil(s)?\b|\bsediment(s)?\b|\bsludge\b|\bbiosolid(s)?\b", "ineligible_solid_matrix"),
+        (r"\bgroundwater\b|\bground water\b|\baquifer(s)?\b", "ineligible_groundwater_matrix"),
+    ]
+    for pattern, reason in ineligible_patterns:
+        if re.search(pattern, text):
+            return reason
     return ""
 
 

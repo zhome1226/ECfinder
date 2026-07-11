@@ -91,6 +91,122 @@ def test_crossref_select_omits_unsupported_language_and_subject() -> None:
     assert "type" in select
 
 
+def test_crossref_filters_review_like_journal_article(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = {
+        "message": {
+            "items": [
+                {
+                    "DOI": "10.1000/review-article",
+                    "title": ["Ibuprofen as an Emerging Contaminant of Concern"],
+                    "abstract": "This review aims to inform the current status of ibuprofen research.",
+                    "type": "journal-article",
+                },
+                {
+                    "DOI": "10.1000/field-article",
+                    "title": ["Emerging contaminants in river water"],
+                    "abstract": "Field monitoring measured concentrations in river water.",
+                    "type": "journal-article",
+                },
+            ]
+        }
+    }
+    fake = FakeHTTP([runner.HttpResponse(200, {"content-type": "application/json"}, "", payload)])
+    monkeypatch.setattr(runner, "_http_json", fake.json)
+
+    provider = runner.CrossrefProvider()
+    result = provider.execute(provider.compile_request(context(), 1), 1)
+
+    assert result.status == "success"
+    assert result.excluded_counts == {"crossref_review_article": 1}
+    assert result.records[0]["DOI"] == "10.1000/field-article"
+
+
+def test_crossref_filters_ineligible_food_matrix(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = {
+        "message": {
+            "items": [
+                {
+                    "DOI": "10.1000/food",
+                    "title": ["Perchlorate an Emerging Contaminant in Foodstuff and Environment"],
+                    "abstract": "Samples included fruit and vegetables, dried spices, cereals and infant formula.",
+                    "type": "journal-article",
+                },
+                {
+                    "DOI": "10.1000/river",
+                    "title": ["Emerging contaminants in river water"],
+                    "abstract": "Measured concentrations in river water samples.",
+                    "type": "journal-article",
+                },
+            ]
+        }
+    }
+    fake = FakeHTTP([runner.HttpResponse(200, {"content-type": "application/json"}, "", payload)])
+    monkeypatch.setattr(runner, "_http_json", fake.json)
+
+    provider = runner.CrossrefProvider()
+    result = provider.execute(provider.compile_request(context(), 1), 1)
+
+    assert result.status == "success"
+    assert result.excluded_counts == {"ineligible_food_matrix": 1}
+    assert result.records[0]["DOI"] == "10.1000/river"
+
+
+def test_crossref_filters_editorial_article(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = {
+        "message": {
+            "items": [
+                {
+                    "DOI": "10.1000/editorial",
+                    "title": ["Inaugural Editorial: Uniting forces to curb emerging contaminant risks"],
+                    "abstract": "Editorial introduction.",
+                    "type": "journal-article",
+                },
+                {
+                    "DOI": "10.1000/river",
+                    "title": ["Emerging contaminants in river water"],
+                    "abstract": "Measured concentrations in river water samples.",
+                    "type": "journal-article",
+                },
+            ]
+        }
+    }
+    fake = FakeHTTP([runner.HttpResponse(200, {"content-type": "application/json"}, "", payload)])
+    monkeypatch.setattr(runner, "_http_json", fake.json)
+
+    provider = runner.CrossrefProvider()
+    result = provider.execute(provider.compile_request(context(), 1), 1)
+
+    assert result.status == "success"
+    assert result.excluded_counts == {"crossref_editorial_article": 1}
+    assert result.records[0]["DOI"] == "10.1000/river"
+
+
+def test_provider_queries_prefer_specific_surface_water_over_broad_ocean_terms() -> None:
+    broad_context = context()
+    broad_context["canonical_query"] = {
+        **canonical(),
+        "surface_water_terms": [
+            "ocean",
+            "open ocean",
+            "sea",
+            "river",
+            "lake",
+            "ambient surface water",
+        ],
+    }
+
+    crossref_request = runner.CrossrefProvider().compile_request(broad_context, 2)
+    openalex_request = runner.OpenAlexProvider().compile_request(broad_context, 2)
+    semantic_request = runner.SemanticScholarProvider().compile_request(broad_context, 2)
+
+    assert "river" in crossref_request.query
+    assert "ocean" not in crossref_request.query
+    assert any("river" in chunk["query"] for chunk in openalex_request.chunks)
+    assert "ocean" not in " ".join(chunk["query"] for chunk in openalex_request.chunks)
+    assert "river" in semantic_request.query
+    assert "ocean" not in semantic_request.query
+
+
 def test_openalex_uses_short_chunks_not_raw_boolean_and_dedupes(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OPENALEX_API_KEY", raising=False)
     provider = runner.OpenAlexProvider()
@@ -99,15 +215,37 @@ def test_openalex_uses_short_chunks_not_raw_boolean_and_dedupes(monkeypatch: pyt
     assert raw_boolean not in request.query
     assert all(" OR " not in chunk["query"] for chunk in request.chunks)
 
+    abstract = {"Measured": [0], "concentrations": [1], "in": [2], "river": [3], "water": [4]}
     payload1 = {
         "results": [
-            {"id": "https://openalex.org/W1", "doi": "https://doi.org/10.1/a", "title": "A", "type": "article", "language": "en"}
+            {
+                "id": "https://openalex.org/W1",
+                "doi": "https://doi.org/10.1/a",
+                "title": "Emerging contaminants in river water",
+                "abstract_inverted_index": abstract,
+                "type": "article",
+                "language": "en",
+            }
         ]
     }
     payload2 = {
         "results": [
-            {"id": "https://openalex.org/W1", "doi": "https://doi.org/10.1/a", "title": "A duplicate", "type": "article", "language": "en"},
-            {"id": "https://openalex.org/W2", "doi": "https://doi.org/10.1/b", "title": "B", "type": "article", "language": "fr"},
+            {
+                "id": "https://openalex.org/W1",
+                "doi": "https://doi.org/10.1/a",
+                "title": "Emerging contaminants in river water duplicate",
+                "abstract_inverted_index": abstract,
+                "type": "article",
+                "language": "en",
+            },
+            {
+                "id": "https://openalex.org/W2",
+                "doi": "https://doi.org/10.1/b",
+                "title": "Emerging pollutants in lake water",
+                "abstract_inverted_index": abstract,
+                "type": "article",
+                "language": "fr",
+            },
         ]
     }
     fake = FakeHTTP(
@@ -122,6 +260,107 @@ def test_openalex_uses_short_chunks_not_raw_boolean_and_dedupes(monkeypatch: pyt
     assert result.status == "success"
     assert len(result.records) == 2
     assert all("%28%22" not in urllib.parse.urlparse(url).query for url in fake.urls)
+
+
+def test_openalex_filters_review_and_missing_surface_water_signal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = runner.OpenAlexProvider()
+    request = provider.compile_request(context(), 2)
+    payload = {
+        "results": [
+            {
+                "id": "https://openalex.org/Wreview",
+                "doi": "https://doi.org/10.1/review",
+                "title": "Microbial Degradation of Petroleum Hydrocarbon Contaminants: An Overview",
+                "abstract_inverted_index": {"This": [0], "overview": [1], "soil": [2]},
+                "type": "article",
+                "language": "en",
+            },
+            {
+                "id": "https://openalex.org/Wnosignal",
+                "doi": "https://doi.org/10.1/nosignal",
+                "title": "Present and Future of Surface-Enhanced Raman Scattering",
+                "abstract_inverted_index": {"This": [0], "Review": [1], "spectroscopy": [2]},
+                "type": "article",
+                "language": "en",
+            },
+            {
+                "id": "https://openalex.org/Wfield",
+                "doi": "https://doi.org/10.1/field",
+                "title": "Emerging contaminants in river water",
+                "abstract_inverted_index": {
+                    "Measured": [0],
+                    "concentrations": [1],
+                    "in": [2],
+                    "river": [3],
+                    "water": [4],
+                },
+                "type": "article",
+                "language": "en",
+            },
+        ]
+    }
+    fake = FakeHTTP([runner.HttpResponse(200, {"content-type": "application/json"}, "", payload)])
+    monkeypatch.setattr(runner, "_http_json", fake.json)
+
+    result = provider.execute(request, 1)
+
+    assert result.status == "success"
+    assert result.records[0]["id"] == "https://openalex.org/Wfield"
+    assert result.diagnostics["excluded_counts"] == {
+        "ineligible_solid_matrix": 1,
+        "openalex_review_article": 1,
+    }
+
+
+def test_openalex_filters_ineligible_treatment_water_matrix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = runner.OpenAlexProvider()
+    request = provider.compile_request(context(), 1)
+    payload = {
+        "results": [
+            {
+                "id": "https://openalex.org/Wdrinking",
+                "doi": "https://doi.org/10.1/drinking",
+                "title": "Contaminants of emerging concern in source and treated drinking waters",
+                "abstract_inverted_index": {
+                    "drinking": [0],
+                    "water": [1],
+                    "treatment": [2],
+                    "plants": [3],
+                    "detected": [4],
+                },
+                "type": "article",
+                "language": "en",
+            },
+            {
+                "id": "https://openalex.org/Wriver",
+                "doi": "https://doi.org/10.1/river",
+                "title": "Contaminants of emerging concern in receiving river water",
+                "abstract_inverted_index": {
+                    "Measured": [0],
+                    "concentrations": [1],
+                    "in": [2],
+                    "river": [3],
+                    "water": [4],
+                },
+                "type": "article",
+                "language": "en",
+            },
+        ]
+    }
+    fake = FakeHTTP([runner.HttpResponse(200, {"content-type": "application/json"}, "", payload)])
+    monkeypatch.setattr(runner, "_http_json", fake.json)
+
+    result = provider.execute(request, 1)
+
+    assert result.status == "success"
+    assert result.records[0]["id"] == "https://openalex.org/Wriver"
+    assert result.diagnostics["excluded_counts"] == {
+        "ineligible_drinking_or_treatment_water": 1,
+    }
 
 
 def test_semantic_scholar_bad_request_is_not_no_results(monkeypatch: pytest.MonkeyPatch) -> None:
