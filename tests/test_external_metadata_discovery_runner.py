@@ -243,6 +243,42 @@ def test_pubmed_blocked_html_retries_without_api_key(monkeypatch: pytest.MonkeyP
     assert "api_key=" not in fake.urls[1]
 
 
+def test_pubmed_blocked_eutilities_uses_web_html_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NCBI_EMAIL", "configured@example.invalid")
+    monkeypatch.setenv("NCBI_TOOL", "ECMonitor")
+    blocked = runner.HttpResponse(
+        200,
+        {"content-type": "text/html"},
+        "<html><title>NCBI - WWW Error Blocked Diagnostic</title></html>",
+    )
+    html = runner.HttpResponse(
+        200,
+        {"content-type": "text/html"},
+        """
+        <div class="docsum-content">
+          <a class="docsum-title" href="/33839659/" data-article-id="33839659">
+            Occurrence of emerging contaminants in river water.
+          </a>
+          <div class="docsum-citation full-citation">Water Res. 2021.</div>
+          <span class="docsum-authors full-authors">Biswas P, Vellanki BP.</span>
+        </div>
+        <div class="result-actions-bar bottom-bar"></div>
+        """,
+    )
+    fake = FakeHTTP([blocked, blocked, html, blocked])
+    monkeypatch.setattr(runner, "_http_text", fake.text)
+    provider = runner.PubMedProvider()
+
+    result = provider.execute(provider.compile_request(context(), 1), 1)
+
+    assert result.status == "partial"
+    assert result.diagnostics["fallback"] == "pubmed_web_html"
+    assert result.records[0]["provider_record_id"] == "33839659"
+    assert result.records[0]["document_type"] == "Journal Article"
+
+
 @pytest.mark.parametrize(
     ("body", "content_type", "classification"),
     [

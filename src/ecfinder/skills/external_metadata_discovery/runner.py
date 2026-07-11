@@ -683,6 +683,10 @@ class PubMedProvider:
             retry = _http_text(retry_url, JSON_HEADERS)
             if not _is_pubmed_blocked_html(retry):
                 esearch = retry
+        if _is_pubmed_blocked_html(esearch):
+            fallback = _pubmed_html_fallback_search(request, limit)
+            if fallback is not None:
+                return fallback
         error = _pubmed_response_error(esearch, "esearch", expect_json=True)
         if error is not None:
             return error
@@ -911,12 +915,166 @@ def _pubmed_response_error(response: HttpResponse, stage: str, *, expect_json: b
     return None
 
 
+def _pubmed_html_fallback_search(
+    request: ProviderRequest, limit: int
+) -> ProviderResult | None:
+    """Fallback when E-utilities are blocked but the PubMed web UI is reachable."""
+    html_url = "https://pubmed.ncbi.nlm.nih.gov/?" + urllib.parse.urlencode(
+        {"term": _pubmed_web_query(request.query)}
+    )
+    html = _http_text(html_url, {"User-Agent": USER_AGENT, "Accept": "text/html,*/*"})
+    if html.status != 200 or _is_pubmed_blocked_html(html):
+        return None
+    ids = _pubmed_ids_from_html(html.text)[:limit]
+    if not ids:
+        diagnostics = _pubmed_diagnostics(html, "pubmed_html_no_ids", "web_search")
+        diagnostics["fallback"] = "pubmed_web_html"
+        return ProviderResult("pubmed", [], "failed", "PubMed web fallback returned no IDs", diagnostics)
+
+    efetch_params = {
+        "db": "pubmed",
+        "id": ",".join(ids),
+        "retmode": "xml",
+        "email": os.environ.get("NCBI_EMAIL", "").strip(),
+        "tool": os.environ.get("NCBI_TOOL", "ECMonitor").strip() or "ECMonitor",
+    }
+    if os.environ.get("NCBI_API_KEY", "").strip():
+        efetch_params["api_key"] = os.environ["NCBI_API_KEY"]
+    efetch = _http_text(
+        _url("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi", efetch_params),
+        XML_HEADERS,
+    )
+    if not _is_pubmed_blocked_html(efetch):
+        error = _pubmed_response_error(efetch, "efetch", expect_json=False)
+        if error is None:
+            try:
+                root = ET.fromstring(efetch.text.strip())
+            except ET.ParseError:
+                root = None
+            if root is not None:
+                records = [
+                    record
+                    for record in _pubmed_records(root, request.params.get("term", ""))
+                    if record.get("title")
+                ][:limit]
+                diagnostics = {"fallback": "pubmed_web_html_ids_then_efetch"}
+                return ProviderResult(
+                    "pubmed",
+                    records,
+                    "success" if records else "no-results",
+                    diagnostics=diagnostics,
+                )
+
+    records = _pubmed_records_from_html(html.text, request.params.get("term", ""))[:limit]
+    diagnostics = _pubmed_diagnostics(html, "eutils_blocked_pubmed_html_fallback", "web_search")
+    diagnostics["fallback"] = "pubmed_web_html"
+    diagnostics["efetch_classification"] = (
+        "ncbi_blocked_html" if _is_pubmed_blocked_html(efetch) else "unavailable"
+    )
+    return ProviderResult(
+        "pubmed",
+        records,
+        "partial" if records else "failed",
+        "E-utilities blocked; used PubMed web HTML fallback" if records else "E-utilities and PubMed HTML fallback failed",
+        diagnostics,
+    )
+
+
 def _is_pubmed_blocked_html(response: HttpResponse) -> bool:
     return (
         response.status == 200
         and "html" in _content_type(response).lower()
         and "blocked diagnostic" in response.text.lower()
     )
+
+
+def _pubmed_web_query(query: str) -> str:
+    text = re.sub(
+        r'\("[^"]+"\[Date - Publication\]\s*:\s*"[^"]+"\[Date - Publication\]\)',
+        " ",
+        query,
+    )
+    text = re.sub(
+        r'\((?:"[^"]+"\[Publication Type\](?:\s+OR\s+)*)+\)',
+        " ",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(r"\[[^\]]+\]", "", text)
+    text = text.replace('"', "")
+    text = re.sub(r"\bAND\b|\bOR\b", " ", text, flags=re.IGNORECASE)
+    text = text.replace("(", " ").replace(")", " ").replace(":", " ")
+    return " ".join(text.split())[:180] or "emerging contaminants river concentration"
+
+
+def _pubmed_ids_from_html(text: str) -> list[str]:
+    ids: list[str] = []
+    for pattern in [
+        r'data-article-id="(\d+)"',
+        r'class="docsum-title"[^>]+href="/(\d+)/"',
+        r'href="/(\d{6,9})/"',
+    ]:
+        for pmid in re.findall(pattern, text):
+            if pmid not in ids:
+                ids.append(pmid)
+    return ids
+
+
+def _pubmed_records_from_html(text: str, query: str) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    allowed = _pubmed_allowed_publication_types(query)
+    for body in re.findall(
+        r'<div class="docsum-content"[^>]*>(.*?)<div class="result-actions-bar bottom-bar">',
+        text,
+        flags=re.DOTALL,
+    ):
+        pmid_match = re.search(r'data-article-id="(\d+)"', body) or re.search(
+            r'href="/(\d{6,9})/"', body
+        )
+        title_match = re.search(
+            r'<a\b[^>]*class="docsum-title"[^>]*>(?P<title>.*?)</a>',
+            body,
+            flags=re.DOTALL,
+        )
+        if not pmid_match or not title_match:
+            continue
+        doc_type = "Journal Article" if not allowed or "journal article" in allowed else ""
+        if not doc_type:
+            continue
+        citation = _strip_markup(_first_match(body, r'<div class="docsum-citation[^"]*"[^>]*>(.*?)</div>'))
+        records.append(
+            {
+                "source_provider": "pubmed",
+                "provider_record_id": pmid_match.group(1),
+                "doi": "",
+                "title": _strip_markup(title_match.group("title")),
+                "abstract": "",
+                "year": _first_match(citation, r"\b(?:19|20)\d{2}\b"),
+                "journal": citation,
+                "authors": [
+                    author.strip()
+                    for author in _strip_markup(
+                        _first_match(body, r'<span class="docsum-authors[^"]*"[^>]*>(.*?)</span>')
+                    ).split(",")
+                    if author.strip()
+                ],
+                "keywords": [],
+                "url": f"https://pubmed.ncbi.nlm.nih.gov/{pmid_match.group(1)}/",
+                "open_access_hint": None,
+                "document_type": doc_type,
+                "language": None,
+            }
+        )
+    return records
+
+
+def _first_match(text: str, pattern: str) -> str:
+    match = re.search(pattern, text, flags=re.DOTALL)
+    if not match:
+        return ""
+    if match.lastindex:
+        return str(match.group(1))
+    return str(match.group(0))
 
 
 def _pubmed_records(root: ET.Element, query: str = "") -> list[dict[str, Any]]:
