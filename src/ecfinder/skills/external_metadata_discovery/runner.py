@@ -93,14 +93,104 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m ecfinder.skills.external_metadata_discovery.runner"
     )
-    parser.add_argument("--input", required=True, help="Skill request JSON path.")
+    parser.add_argument("--input", help="Skill request JSON path.")
     parser.add_argument("--output", required=True, help="Skill result JSON path.")
+    parser.add_argument(
+        "--health-check",
+        action="store_true",
+        help="Run a provider connectivity/authentication health check.",
+    )
+    parser.add_argument(
+        "--provider",
+        action="append",
+        choices=["crossref", "openalex", "semantic_scholar", "pubmed"],
+        help="Provider to include in health check. Repeatable.",
+    )
     args = parser.parse_args(argv)
-    request_path = Path(args.input).resolve()
     output_path = Path(args.output).resolve()
-    result = run_skill(cast(dict[str, Any], _read_json(request_path)), output_path)
+    if args.health_check:
+        result = provider_health_check(args.provider)
+    else:
+        if not args.input:
+            parser.error("--input is required unless --health-check is set")
+        request_path = Path(args.input).resolve()
+        result = run_skill(cast(dict[str, Any], _read_json(request_path)), output_path)
     _write_json(output_path, result)
     return 0
+
+
+def provider_health_check(providers: list[str] | None = None) -> dict[str, Any]:
+    requested = providers or ["crossref", "openalex", "semantic_scholar", "pubmed"]
+    implementations = _provider_implementations()
+    context = {
+        "canonical_query": {
+            "emerging_contaminant_terms": ["emerging contaminants"],
+            "surface_water_terms": ["river"],
+            "monitoring_and_concentration_terms": ["concentration"],
+        },
+        "row": {
+            "query_text": '"emerging contaminants" AND river AND concentration',
+        },
+        "date_from": "2025-01-01",
+        "date_to": "2026-07-10",
+        "document_types": ["journal article", "research article"],
+    }
+    provider_results: dict[str, Any] = {}
+    for provider in requested:
+        implementation = implementations.get(provider)
+        status: dict[str, Any] = {
+            "provider": provider,
+            "environment": _auth_status(provider),
+            "connectivity": "not-run",
+            "authentication": _provider_authentication_status(provider),
+            "api_response_status": "not-run",
+            "status": "not-run",
+            "error": "",
+            "diagnostics": {},
+        }
+        if implementation is None:
+            status.update(
+                {
+                    "connectivity": "not-run",
+                    "api_response_status": "unsupported_provider",
+                    "status": "not-run",
+                    "error": "unsupported provider",
+                }
+            )
+            provider_results[provider] = status
+            continue
+        try:
+            request = implementation.compile_request(dict(context, provider=provider), 1)
+            result = implementation.execute(request, 1)
+        except Exception as exc:
+            status.update(
+                {
+                    "connectivity": "failed",
+                    "api_response_status": "exception",
+                    "status": "failed",
+                    "error": str(exc),
+                }
+            )
+            provider_results[provider] = status
+            continue
+        http_status = result.diagnostics.get("http_status")
+        status.update(
+            {
+                "connectivity": _connectivity_status(result.status),
+                "api_response_status": _api_response_status(result, http_status),
+                "status": result.status,
+                "record_count": len(result.records),
+                "error_classification": result.diagnostics.get("classification", ""),
+            }
+        )
+        provider_results[provider] = status
+    return {
+        "runner": RUNNER_ID,
+        "mode": "provider_health_check",
+        "environment_validation": _environment_validation(),
+        "providers": provider_results,
+        "completed_at": _now(),
+    }
 
 
 def run_skill(request: dict[str, Any], output_path: Path) -> dict[str, Any]:
@@ -675,6 +765,48 @@ def _auth_status(provider: str) -> dict[str, str]:
     return {}
 
 
+def _environment_validation() -> dict[str, str]:
+    return {
+        name: _configured(name)
+        for name in [
+            "NCBI_EMAIL",
+            "NCBI_TOOL",
+            "NCBI_API_KEY",
+            "SEMANTIC_SCHOLAR_API_KEY",
+            "OPENALEX_API_KEY",
+            "CROSSREF_MAILTO",
+        ]
+    }
+
+
+def _provider_authentication_status(provider: str) -> str:
+    auth = _auth_status(provider)
+    if provider == "pubmed" and auth.get("NCBI_EMAIL") != "configured":
+        return "configuration_required"
+    if any(value == "configured" for value in auth.values()):
+        return "configured"
+    return "anonymous"
+
+
+def _api_response_status(result: ProviderResult, http_status: Any) -> str:
+    classification = str(result.diagnostics.get("classification") or "")
+    if classification:
+        return classification
+    if http_status is not None:
+        return str(http_status)
+    return result.status
+
+
+def _connectivity_status(status: str) -> str:
+    if status in {"success", "no-results", "partial"}:
+        return "connected"
+    if status == "configuration_required":
+        return "not-run"
+    if status == "rate-limited":
+        return "connected_rate_limited"
+    return "failed"
+
+
 def _configured(name: str) -> str:
     return "configured" if os.environ.get(name, "").strip() else "missing"
 
@@ -769,7 +901,8 @@ def _pubmed_response_error(response: HttpResponse, stage: str, *, expect_json: b
     if not text:
         return ProviderResult("pubmed", [], "failed", f"PubMed {stage} returned empty response", _pubmed_diagnostics(response, "empty_response", stage))
     if "html" in content_type or text.lower().startswith("<html"):
-        return ProviderResult("pubmed", [], "failed", f"PubMed {stage} returned HTML response", _pubmed_diagnostics(response, "html_response", stage))
+        classification = "ncbi_blocked_html" if _is_pubmed_blocked_html(response) else "html_response"
+        return ProviderResult("pubmed", [], "failed", f"PubMed {stage} returned HTML response", _pubmed_diagnostics(response, classification, stage))
     if expect_json:
         try:
             json.loads(text)

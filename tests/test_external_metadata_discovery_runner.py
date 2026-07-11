@@ -294,3 +294,57 @@ def test_run_skill_preserves_missing_document_type_and_language(
     record = json.loads(page.read_text(encoding="utf-8").strip())
     assert record["document_type"] is None
     assert record["language"] is None
+
+
+def test_provider_health_check_reports_configuration_without_secret_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NCBI_EMAIL", "configured@example.invalid")
+    monkeypatch.setenv("NCBI_TOOL", "ECMonitor")
+    monkeypatch.setenv("NCBI_API_KEY", "secret")
+    monkeypatch.setenv("OPENALEX_API_KEY", "secret")
+    monkeypatch.setenv("CROSSREF_MAILTO", "configured@example.invalid")
+    monkeypatch.delenv("SEMANTIC_SCHOLAR_API_KEY", raising=False)
+
+    class FakeProvider:
+        name = "crossref"
+
+        def compile_request(self, context: dict[str, Any], limit: int) -> runner.ProviderRequest:
+            return runner.ProviderRequest(
+                provider="crossref",
+                url="https://example.invalid/?api_key=secret",
+                sanitized_url="https://example.invalid/?api_key=configured",
+                query="health",
+                params={"api_key": "secret"},
+                sanitized_params={"api_key": "configured"},
+            )
+
+        def execute(
+            self, request: runner.ProviderRequest, limit: int
+        ) -> runner.ProviderResult:
+            return runner.ProviderResult(
+                "crossref",
+                [{"title": "ok"}],
+                "success",
+                diagnostics={"http_status": 200},
+            )
+
+        def normalize_record(self, raw: dict[str, Any]) -> dict[str, Any]:
+            return raw
+
+        def classify_error(
+            self, response: runner.HttpResponse
+        ) -> tuple[str, str, dict[str, Any]]:
+            return "failed", "failed", {}
+
+    monkeypatch.setattr(runner, "_provider_implementations", lambda: {"crossref": FakeProvider()})
+    result = runner.provider_health_check(["crossref", "semantic_scholar"])
+    dumped = json.dumps(result, sort_keys=True)
+    assert result["environment_validation"]["NCBI_EMAIL"] == "configured"
+    assert result["environment_validation"]["SEMANTIC_SCHOLAR_API_KEY"] == "missing"
+    assert result["providers"]["crossref"]["connectivity"] == "connected"
+    assert result["providers"]["crossref"]["authentication"] == "configured"
+    assert result["providers"]["crossref"]["api_response_status"] == "200"
+    assert result["providers"]["semantic_scholar"]["status"] == "not-run"
+    assert "secret" not in dumped
+    assert "configured@example.invalid" not in dumped
