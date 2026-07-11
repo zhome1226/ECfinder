@@ -828,6 +828,12 @@ def test_pubmed_misuse_redirect_is_classified_as_ncbi_blocked_html(
 
     assert result.status == "failed"
     assert result.diagnostics["classification"] == "ncbi_blocked_html"
+    assert result.diagnostics["blocked_by_ncbi"] is True
+    assert result.diagnostics["final_url_host"] in {
+        "eutils.ncbi.nlm.nih.gov",
+        "misuse.ncbi.nlm.nih.gov",
+    }
+    assert "suggested_action" in result.diagnostics
 
 
 def test_run_skill_preserves_missing_document_type_and_language(

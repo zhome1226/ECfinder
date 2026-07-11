@@ -1665,13 +1665,22 @@ def _generic_error(provider: str, response: HttpResponse) -> tuple[str, str, dic
 
 
 def _pubmed_diagnostics(response: HttpResponse, classification: str, stage: str) -> dict[str, Any]:
-    return {
+    diagnostics: dict[str, Any] = {
         "stage": stage,
         "classification": classification,
         "http_status": response.status,
         "content_type": _content_type(response),
         "response_snippet": _snippet(response.text),
     }
+    if classification == "ncbi_blocked_html":
+        diagnostics["blocked_by_ncbi"] = True
+        diagnostics["final_url_host"] = urllib.parse.urlparse(response.url).netloc
+        diagnostics["final_url_path"] = urllib.parse.urlparse(response.url).path
+        diagnostics["suggested_action"] = (
+            "NCBI returned a blocked/misuse HTML page before JSON/XML parsing. "
+            "Use an unblocked network path or wait for NCBI access to clear."
+        )
+    return diagnostics
 
 
 def _execution_status(source_status: dict[str, str], total: int) -> str:
