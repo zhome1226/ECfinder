@@ -1086,7 +1086,7 @@ def _pubmed_html_fallback_search(
         html = _http_text(html_url, {"User-Agent": USER_AGENT, "Accept": "text/html,*/*"})
         if html.status != 200 or _is_pubmed_blocked_html(html):
             continue
-        ids = _pubmed_ids_from_html(html.text)[:limit]
+        ids = _pubmed_ids_from_html(html.text)[: min(max(limit * 8, limit), 50)]
         web_query = candidate_query
         if ids:
             break
@@ -1119,21 +1119,27 @@ def _pubmed_html_fallback_search(
             except ET.ParseError:
                 root = None
             if root is not None:
-                records = [
-                    record
-                    for record in _pubmed_records(root, request.params.get("term", ""))
-                    if record.get("title")
-                ][:limit]
+                records = _filter_pubmed_records(
+                    [
+                        record
+                        for record in _pubmed_records(root, request.params.get("term", ""))
+                        if record.get("title")
+                    ],
+                    limit,
+                )
                 diagnostics = {"fallback": "pubmed_web_html_ids_then_efetch"}
                 return ProviderResult(
                     "pubmed",
                     records,
-                    "success" if records else "no-results",
+                    "success" if records else "partial",
+                    "E-utilities reachable after web fallback, but no eligible PubMed records survived filtering"
+                    if not records
+                    else "",
                     diagnostics=diagnostics,
                 )
 
-    records = _pubmed_records_from_html(html.text, request.params.get("term", ""))[:limit]
-    records = _enrich_pubmed_html_records(records)
+    records = _pubmed_records_from_html(html.text, request.params.get("term", ""))
+    records = _filter_pubmed_records(_enrich_pubmed_html_records(records), limit)
     diagnostics = _pubmed_diagnostics(html, "eutils_blocked_pubmed_html_fallback", "web_search")
     diagnostics["fallback"] = "pubmed_web_html"
     diagnostics["web_query"] = web_query
@@ -1143,10 +1149,35 @@ def _pubmed_html_fallback_search(
     return ProviderResult(
         "pubmed",
         records,
-        "partial" if records else "failed",
-        "E-utilities blocked; used PubMed web HTML fallback" if records else "E-utilities and PubMed HTML fallback failed",
+        "partial",
+        "E-utilities blocked; used PubMed web HTML fallback"
+        if records
+        else "E-utilities blocked; PubMed web HTML fallback returned no eligible records after filtering",
         diagnostics,
     )
+
+
+def _filter_pubmed_records(records: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+    filtered = []
+    for record in records:
+        title = str(record.get("title") or "")
+        abstract = str(record.get("abstract") or "")
+        document_type = str(record.get("document_type") or "")
+        if document_type.casefold() in {"review", "systematic review", "editorial"}:
+            continue
+        if _looks_like_review_article(title, abstract) or _looks_like_editorial_article(title, abstract):
+            continue
+        matrix_reason = _ineligible_matrix_reason(title, abstract)
+        if matrix_reason:
+            continue
+        if not _has_surface_water_signal(title, abstract):
+            continue
+        if not _has_monitoring_or_concentration_signal(title, abstract):
+            continue
+        filtered.append(record)
+        if len(filtered) >= limit:
+            break
+    return filtered
 
 
 def _is_pubmed_blocked_html(response: HttpResponse) -> bool:

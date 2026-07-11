@@ -572,6 +572,108 @@ def test_pubmed_web_fallback_tries_broader_queries_when_strict_query_has_no_ids(
     assert result.diagnostics["web_query"] == "emerging contaminants river concentration"
 
 
+def test_pubmed_web_fallback_filters_review_records(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NCBI_EMAIL", "configured@example.invalid")
+    monkeypatch.setenv("NCBI_TOOL", "ECMonitor")
+    blocked = runner.HttpResponse(
+        200,
+        {"content-type": "text/html"},
+        "<html><title>NCBI - WWW Error Blocked Diagnostic</title></html>",
+    )
+    html = runner.HttpResponse(
+        200,
+        {"content-type": "text/html"},
+        """
+        <div class="docsum-content">
+          <a class="docsum-title" href="/111/" data-article-id="111">
+            A review on environmental monitoring of water organic pollutants identified by EU guidelines.
+          </a>
+          <div class="docsum-citation full-citation">Water Rev. 2020.</div>
+        </div>
+        <div class="result-actions-bar bottom-bar"></div>
+        <div class="docsum-content">
+          <a class="docsum-title" href="/222/" data-article-id="222">
+            Occurrence of contaminants of emerging concern in lake and river water.
+          </a>
+          <div class="docsum-citation full-citation">Water Res. 2021.</div>
+        </div>
+        <div class="result-actions-bar bottom-bar"></div>
+        """,
+    )
+    review_detail = runner.HttpResponse(
+        200,
+        {"content-type": "text/html"},
+        """
+        <html lang="en">
+          <meta name="description" content="This review summarizes environmental monitoring of water organic pollutants.">
+        </html>
+        """,
+    )
+    field_detail = runner.HttpResponse(
+        200,
+        {"content-type": "text/html"},
+        """
+        <html lang="en">
+          <meta name="description" content="Measured concentrations in lake and river water samples.">
+          <meta name="keywords" content="doi:10.1000/field, Rivers, Lakes">
+        </html>
+        """,
+    )
+    fake = FakeHTTP([blocked, blocked, html, blocked, review_detail, field_detail])
+    monkeypatch.setattr(runner, "_http_text", fake.text)
+
+    provider = runner.PubMedProvider()
+    result = provider.execute(provider.compile_request(context(), 2), 2)
+
+    assert result.status == "partial"
+    assert [record["provider_record_id"] for record in result.records] == ["222"]
+
+
+def test_pubmed_web_fallback_no_eligible_records_remains_partial(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NCBI_EMAIL", "configured@example.invalid")
+    monkeypatch.setenv("NCBI_TOOL", "ECMonitor")
+    blocked = runner.HttpResponse(
+        200,
+        {"content-type": "text/html"},
+        "<html><title>NCBI - WWW Error Blocked Diagnostic</title></html>",
+    )
+    html = runner.HttpResponse(
+        200,
+        {"content-type": "text/html"},
+        """
+        <div class="docsum-content">
+          <a class="docsum-title" href="/111/" data-article-id="111">
+            A review on environmental monitoring of water organic pollutants identified by EU guidelines.
+          </a>
+          <div class="docsum-citation full-citation">Water Rev. 2020.</div>
+        </div>
+        <div class="result-actions-bar bottom-bar"></div>
+        """,
+    )
+    review_detail = runner.HttpResponse(
+        200,
+        {"content-type": "text/html"},
+        """
+        <html lang="en">
+          <meta name="description" content="This review summarizes environmental monitoring of water organic pollutants.">
+        </html>
+        """,
+    )
+    fake = FakeHTTP([blocked, blocked, html, blocked, review_detail])
+    monkeypatch.setattr(runner, "_http_text", fake.text)
+
+    provider = runner.PubMedProvider()
+    result = provider.execute(provider.compile_request(context(), 2), 2)
+
+    assert result.status == "partial"
+    assert result.records == []
+    assert "no eligible records" in result.error
+
+
 @pytest.mark.parametrize(
     ("body", "content_type", "classification"),
     [
