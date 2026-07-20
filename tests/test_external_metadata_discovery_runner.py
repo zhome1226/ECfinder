@@ -151,6 +151,44 @@ def test_crossref_filters_ineligible_food_matrix(monkeypatch: pytest.MonkeyPatch
     assert result.records[0]["DOI"] == "10.1000/river"
 
 
+def test_crossref_applies_canonical_negative_terms_client_side(monkeypatch: pytest.MonkeyPatch) -> None:
+    negative_context = context()
+    negative_context["canonical_query"] = {
+        **canonical(),
+        "prohibited_or_rejected_terms": ["constructed wetlands"],
+    }
+    payload = {
+        "message": {
+            "items": [
+                {
+                    "DOI": "10.1000/wetland-treatment",
+                    "title": ["Emerging contaminants in constructed wetlands"],
+                    "abstract": "Treatment performance for constructed wetlands.",
+                    "type": "journal-article",
+                },
+                {
+                    "DOI": "10.1000/river",
+                    "title": ["Emerging contaminants in river water"],
+                    "abstract": "Measured concentrations in river water samples.",
+                    "type": "journal-article",
+                },
+            ]
+        }
+    }
+    fake = FakeHTTP([runner.HttpResponse(200, {"content-type": "application/json"}, "", payload)])
+    monkeypatch.setattr(runner, "_http_json", fake.json)
+
+    provider = runner.CrossrefProvider()
+    request = provider.compile_request(negative_context, 1)
+    result = provider.execute(request, 1)
+
+    assert "constructed wetlands" not in request.url
+    assert request.executable_request()["params"].get("client_side_negative_terms") is None
+    assert result.records[0]["DOI"] == "10.1000/river"
+    assert result.excluded_counts == {"client_side_negative_term": 1}
+    assert result.diagnostics["client_side_negative_terms"] == ["constructed wetlands"]
+
+
 def test_crossref_filters_editorial_article(monkeypatch: pytest.MonkeyPatch) -> None:
     payload = {
         "message": {
@@ -363,6 +401,54 @@ def test_openalex_filters_ineligible_treatment_water_matrix(
     }
 
 
+def test_openalex_applies_negative_terms_after_source_specific_retrieval(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    negative_context = context()
+    negative_context["canonical_query"] = {
+        **canonical(),
+        "prohibited_or_rejected_terms": ["fish"],
+    }
+    provider = runner.OpenAlexProvider()
+    request = provider.compile_request(negative_context, 1)
+    abstract = {
+        "Measured": [0],
+        "concentrations": [1],
+        "in": [2],
+        "river": [3],
+        "water": [4],
+    }
+    payload = {
+        "results": [
+            {
+                "id": "https://openalex.org/Wfish",
+                "doi": "https://doi.org/10.1/fish",
+                "title": "Emerging contaminants in river fish",
+                "abstract_inverted_index": abstract,
+                "type": "article",
+                "language": "en",
+            },
+            {
+                "id": "https://openalex.org/Wriver",
+                "doi": "https://doi.org/10.1/river",
+                "title": "Emerging contaminants in river water",
+                "abstract_inverted_index": abstract,
+                "type": "article",
+                "language": "en",
+            },
+        ]
+    }
+    fake = FakeHTTP([runner.HttpResponse(200, {"content-type": "application/json"}, "", payload)])
+    monkeypatch.setattr(runner, "_http_json", fake.json)
+
+    result = provider.execute(request, 1)
+
+    assert "fish" not in request.url
+    assert request.chunks[0]["client_side_negative_terms"] == ["fish"]
+    assert result.records[0]["id"] == "https://openalex.org/Wriver"
+    assert result.diagnostics["excluded_counts"] == {"client_side_negative_term": 1}
+
+
 def test_semantic_scholar_bad_request_is_not_no_results(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = FakeHTTP([runner.HttpResponse(400, {"content-type": "application/json"}, '{"error":"bad query"}')])
     monkeypatch.setattr(runner, "_http_json", fake.json)
@@ -426,6 +512,43 @@ def test_semantic_scholar_review_and_matrix_records_are_filtered(
         "semantic_scholar_ineligible_publication_type": 1,
         "ineligible_drinking_or_treatment_water": 1,
     }
+
+
+def test_semantic_scholar_applies_negative_terms_without_query_pollution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    negative_context = context()
+    negative_context["canonical_query"] = {
+        **canonical(),
+        "prohibited_or_rejected_terms": ["resource recovery"],
+    }
+    payload = {
+        "data": [
+            {
+                "paperId": "recovery",
+                "title": "Resource recovery from emerging contaminant treatment in river water",
+                "abstract": "Resource recovery process measured concentrations in river water.",
+                "publicationTypes": ["JournalArticle"],
+            },
+            {
+                "paperId": "river",
+                "title": "Emerging contaminants in river surface water",
+                "abstract": "Measured concentrations and occurrence in river water.",
+                "publicationTypes": ["JournalArticle"],
+            },
+        ]
+    }
+    fake = FakeHTTP([runner.HttpResponse(200, {"content-type": "application/json"}, "", payload)])
+    monkeypatch.setattr(runner, "_http_json", fake.json)
+
+    provider = runner.SemanticScholarProvider()
+    request = provider.compile_request(negative_context, 1)
+    result = provider.execute(request, 1)
+
+    assert "resource+recovery" not in request.url
+    assert request.sanitized_params["client_side_negative_terms"] == ["resource recovery"]
+    assert result.records[0]["paperId"] == "river"
+    assert result.excluded_counts == {"client_side_negative_term": 1}
 
 
 def test_pubmed_json_esearch_and_xml_efetch_parse(monkeypatch: pytest.MonkeyPatch) -> None:

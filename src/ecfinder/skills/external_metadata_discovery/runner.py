@@ -325,11 +325,13 @@ class CrossrefProvider:
     def compile_request(self, context: dict[str, Any], limit: int) -> ProviderRequest:
         query = _crossref_query(context)
         page_size = int(context.get("page_size") or limit or 1)
+        negative_terms = _negative_terms(context["canonical_query"])
         params = {
             "query.bibliographic": query,
             "rows": min(max(page_size * 12, page_size), 50),
             "offset": 0,
             "_page_size": page_size,
+            "_client_side_negative_terms": negative_terms,
             "filter": _join_filters(
                 [
                     _date_filter("from-pub-date", context["date_from"]),
@@ -358,8 +360,10 @@ class CrossrefProvider:
             params["mailto"] = mailto
         sanitized = _sanitize_params(params)
         sanitized.pop("_page_size", None)
+        sanitized.pop("_client_side_negative_terms", None)
         public_params = dict(params)
         public_params.pop("_page_size", None)
+        public_params.pop("_client_side_negative_terms", None)
         return ProviderRequest(
             provider=self.name,
             url=_url("https://api.crossref.org/works", public_params),
@@ -371,14 +375,20 @@ class CrossrefProvider:
 
     def execute(self, request: ProviderRequest, limit: int) -> ProviderResult:
         page_size = int(request.params.get("_page_size") or limit or 1)
+        negative_terms = [
+            str(term) for term in request.params.get("_client_side_negative_terms", [])
+        ]
         records: list[dict[str, Any]] = []
         pages: list[list[dict[str, Any]]] = []
         excluded: dict[str, int] = {}
         diagnostics: dict[str, Any] = {"pages_attempted": 0}
+        if negative_terms:
+            diagnostics["client_side_negative_terms"] = negative_terms
         rows = int(request.params.get("rows") or page_size)
         for page_index, offset in enumerate(range(0, max(limit * 12, rows), rows), start=1):
             params = dict(request.params)
             params.pop("_page_size", None)
+            params.pop("_client_side_negative_terms", None)
             params["offset"] = offset
             response = _http_json(_url("https://api.crossref.org/works", params), JSON_HEADERS)
             diagnostics["pages_attempted"] = page_index
@@ -390,6 +400,12 @@ class CrossrefProvider:
             items = response.payload.get("message", {}).get("items", []) or []
             for item in items:
                 reason = _crossref_exclusion_reason(item)
+                if not reason:
+                    reason = _negative_term_exclusion_reason(
+                        _first_text(item.get("title")),
+                        _strip_markup(str(item.get("abstract", "") or "")),
+                        negative_terms,
+                    )
                 if reason:
                     excluded[reason] = excluded.get(reason, 0) + 1
                     continue
@@ -449,6 +465,7 @@ class OpenAlexProvider:
     def compile_request(self, context: dict[str, Any], limit: int) -> ProviderRequest:
         chunks = _openalex_chunks(context["canonical_query"], context["row"])
         page_size = int(context.get("page_size") or limit or 1)
+        negative_terms = _negative_terms(context["canonical_query"])
         filter_parts = []
         if context["date_from"]:
             filter_parts.append(f"from_publication_date:{context['date_from']}")
@@ -487,6 +504,7 @@ class OpenAlexProvider:
                 {
                     "query": chunk,
                     "query_length": len(chunk),
+                    "client_side_negative_terms": negative_terms,
                     "url": _url("https://api.openalex.org/works", _sanitize_params(params)),
                     "params": _sanitize_params(params),
                     "_url": _url("https://api.openalex.org/works", params),
@@ -514,6 +532,14 @@ class OpenAlexProvider:
             "excluded_counts": {},
             "pages_attempted": 0,
         }
+        negative_terms = []
+        if request.params["chunks"]:
+            negative_terms = [
+                str(term)
+                for term in request.params["chunks"][0].get("client_side_negative_terms", [])
+            ]
+        if negative_terms:
+            diagnostics["client_side_negative_terms"] = negative_terms
         for chunk in request.params["chunks"]:
             cursor = "*"
             while len(records) < limit:
@@ -530,6 +556,12 @@ class OpenAlexProvider:
                 page_records: list[dict[str, Any]] = []
                 for item in response.payload.get("results", []) or []:
                     reason = _openalex_exclusion_reason(item)
+                    if not reason:
+                        reason = _negative_term_exclusion_reason(
+                            str(item.get("title") or item.get("display_name") or ""),
+                            _inverted_index_to_text(item.get("abstract_inverted_index")),
+                            negative_terms,
+                        )
                     if reason:
                         excluded = cast(dict[str, int], diagnostics["excluded_counts"])
                         excluded[reason] = excluded.get(reason, 0) + 1
@@ -597,9 +629,11 @@ class SemanticScholarProvider:
 
     def compile_request(self, context: dict[str, Any], limit: int) -> ProviderRequest:
         query = _semantic_query(context["canonical_query"], context["row"])
+        negative_terms = _negative_terms(context["canonical_query"])
         params = {
             "query": query,
             "limit": min(limit, 100),
+            "_client_side_negative_terms": negative_terms,
             "fields": ",".join(
                 [
                     "paperId",
@@ -625,14 +659,20 @@ class SemanticScholarProvider:
         if os.environ.get("SEMANTIC_SCHOLAR_API_KEY", "").strip():
             headers["x-api-key"] = os.environ["SEMANTIC_SCHOLAR_API_KEY"]
             sanitized_headers["x-api-key"] = "configured"
-        url = _url("https://api.semanticscholar.org/graph/v1/paper/search", params)
+        public_params = dict(params)
+        public_params.pop("_client_side_negative_terms", None)
+        sanitized_public_params = dict(public_params)
+        url = _url("https://api.semanticscholar.org/graph/v1/paper/search", public_params)
         return ProviderRequest(
             provider=self.name,
             url=url,
             sanitized_url=url,
             query=query,
             params=params,
-            sanitized_params=params,
+            sanitized_params={
+                **sanitized_public_params,
+                "client_side_negative_terms": negative_terms,
+            },
             headers=headers,
             sanitized_headers=sanitized_headers,
         )
@@ -664,10 +704,19 @@ class SemanticScholarProvider:
             )
         records: list[dict[str, Any]] = []
         excluded: dict[str, int] = {}
+        negative_terms = [
+            str(term) for term in request.params.get("_client_side_negative_terms", [])
+        ]
         for item in data:
             if not isinstance(item, dict) or not item.get("title"):
                 continue
             reason = _semantic_scholar_exclusion_reason(item)
+            if not reason:
+                reason = _negative_term_exclusion_reason(
+                    str(item.get("title") or ""),
+                    str(item.get("abstract") or ""),
+                    negative_terms,
+                )
             if reason:
                 excluded[reason] = excluded.get(reason, 0) + 1
                 continue
@@ -678,6 +727,7 @@ class SemanticScholarProvider:
             self.name,
             records,
             "success" if records else "no-results",
+            diagnostics={"client_side_negative_terms": negative_terms} if negative_terms else {},
             excluded_counts=excluded,
             page_records=_chunk_records(records, min(limit, int(request.params.get("limit") or limit or 1))),
         )
@@ -953,6 +1003,28 @@ def _semantic_query(canonical: dict[str, Any], row: dict[str, Any]) -> str:
     if not query.strip():
         query = _plain_term(str(row.get("query_text") or row.get("compiled_query") or ""))
     return _truncate_query(query, 180)
+
+
+def _negative_terms(canonical: dict[str, Any]) -> list[str]:
+    return [
+        _plain_term(term)
+        for term in _terms(canonical, "prohibited_or_rejected_terms", limit=12)
+        if _plain_term(term)
+    ]
+
+
+def _negative_term_exclusion_reason(title: str, abstract: str, terms: list[str]) -> str:
+    if not terms:
+        return ""
+    text = f"{title} {abstract}".casefold()
+    for term in terms:
+        clean = _plain_term(term).casefold()
+        if not clean:
+            continue
+        pattern = r"(?<!\w)" + re.escape(clean).replace(r"\ ", r"\s+") + r"(?!\w)"
+        if re.search(pattern, text):
+            return "client_side_negative_term"
+    return ""
 
 
 def _pubmed_query(context: dict[str, Any]) -> str:
