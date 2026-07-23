@@ -44,6 +44,22 @@ def canonical() -> dict[str, Any]:
     }
 
 
+def pfas_canonical() -> dict[str, Any]:
+    return {
+        "emerging_contaminant_terms": [
+            "emerging contaminant*",
+            "contaminant* of emerging concern",
+            "micropollutant*",
+            "PFAS",
+            "per- and polyfluoroalkyl substances",
+            "perfluoroalkyl substances",
+            "fluorinated surfactant*",
+        ],
+        "surface_water_terms": ["surface water", "river", "lake", "estuary"],
+        "monitoring_and_concentration_terms": ["monitoring", "occurrence", "concentration"],
+    }
+
+
 def context() -> dict[str, Any]:
     return {
         "canonical_query": canonical(),
@@ -243,6 +259,22 @@ def test_provider_queries_prefer_specific_surface_water_over_broad_ocean_terms()
     assert "ocean" not in " ".join(chunk["query"] for chunk in openalex_request.chunks)
     assert "river" in semantic_request.query
     assert "ocean" not in semantic_request.query
+
+
+def test_provider_queries_include_later_pollutant_family_terms() -> None:
+    pfas_context = context()
+    pfas_context["canonical_query"] = pfas_canonical()
+
+    crossref_request = runner.CrossrefProvider().compile_request(pfas_context, 5)
+    openalex_request = runner.OpenAlexProvider().compile_request(pfas_context, 5)
+    semantic_request = runner.SemanticScholarProvider().compile_request(pfas_context, 5)
+    pubmed_request = runner.PubMedProvider().compile_request(pfas_context, 5)
+
+    assert "PFAS" in crossref_request.query
+    assert any("PFAS" in chunk["query"] for chunk in openalex_request.chunks)
+    assert "PFAS" in semantic_request.query
+    assert '"PFAS"[Title/Abstract]' in pubmed_request.query
+    assert "per- and polyfluoroalkyl substances" in pubmed_request.query
 
 
 def test_openalex_uses_short_chunks_not_raw_boolean_and_dedupes(monkeypatch: pytest.MonkeyPatch) -> None:

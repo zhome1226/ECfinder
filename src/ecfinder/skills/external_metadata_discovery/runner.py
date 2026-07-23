@@ -966,18 +966,18 @@ def _configured(name: str) -> str:
 def _crossref_query(context: dict[str, Any]) -> str:
     canonical = context["canonical_query"]
     terms = []
-    terms.extend(_terms(canonical, "emerging_contaminant_terms", limit=4))
+    terms.extend(_provider_terms(canonical, "emerging_contaminant_terms", limit=8))
     terms.extend(_preferred_surface_water_terms(canonical, limit=4))
-    terms.extend(_terms(canonical, "monitoring_and_concentration_terms", limit=3))
+    terms.extend(_provider_terms(canonical, "monitoring_and_concentration_terms", limit=4))
     if not terms:
         return str(context["row"].get("query_text") or context["row"].get("compiled_query") or "").strip()
     return " ".join(_plain_term(term) for term in terms)
 
 
 def _openalex_chunks(canonical: dict[str, Any], row: dict[str, Any]) -> list[str]:
-    emerging = _terms(canonical, "emerging_contaminant_terms", limit=3) or ["emerging contaminants"]
+    emerging = _provider_terms(canonical, "emerging_contaminant_terms", limit=3) or ["emerging contaminants"]
     water = _preferred_surface_water_terms(canonical, limit=3) or ["surface water"]
-    monitoring = _terms(canonical, "monitoring_and_concentration_terms", limit=2) or ["monitoring"]
+    monitoring = _provider_terms(canonical, "monitoring_and_concentration_terms", limit=3) or ["monitoring"]
     chunks = []
     for index, term in enumerate(emerging):
         chunks.append(
@@ -996,9 +996,9 @@ def _openalex_chunks(canonical: dict[str, Any], row: dict[str, Any]) -> list[str
 
 def _semantic_query(canonical: dict[str, Any], row: dict[str, Any]) -> str:
     terms = []
-    terms.extend(_terms(canonical, "emerging_contaminant_terms", limit=2) or ["emerging contaminants"])
+    terms.extend(_provider_terms(canonical, "emerging_contaminant_terms", limit=5) or ["emerging contaminants"])
     terms.extend(_preferred_surface_water_terms(canonical, limit=2) or ["surface water"])
-    terms.extend(_terms(canonical, "monitoring_and_concentration_terms", limit=1) or ["monitoring"])
+    terms.extend(_provider_terms(canonical, "monitoring_and_concentration_terms", limit=2) or ["monitoring"])
     query = " ".join(_plain_term(term) for term in terms)
     if not query.strip():
         query = _plain_term(str(row.get("query_text") or row.get("compiled_query") or ""))
@@ -1030,18 +1030,17 @@ def _negative_term_exclusion_reason(title: str, abstract: str, terms: list[str])
 def _pubmed_query(context: dict[str, Any]) -> str:
     canonical = context["canonical_query"]
     blocks = []
-    preferred_terms = {
-        "emerging_contaminant_terms": ["emerging contaminant", "micropollutant"],
-        "surface_water_terms": ["surface water", "river", "lake", "estuary", "marine water"],
-        "monitoring_and_concentration_terms": ["monitoring", "occurrence", "concentration"],
+    term_limits = {
+        "emerging_contaminant_terms": 8,
+        "surface_water_terms": 5,
+        "monitoring_and_concentration_terms": 4,
     }
-    for key, preferred in preferred_terms.items():
-        available = {_plain_term(term).lower() for term in _terms(canonical, key, limit=20)}
-        terms = [term for term in preferred if term.lower() in available]
+    for key, limit in term_limits.items():
+        terms = _provider_terms(canonical, key, limit=limit)
         if not terms and key == "surface_water_terms":
             terms = ["surface water"]
         if terms:
-            blocks.append("(" + " OR ".join(f'"{term}"[Title/Abstract]' for term in terms[:3]) + ")")
+            blocks.append("(" + " OR ".join(f'"{_plain_term(term)}"[Title/Abstract]' for term in terms) + ")")
     base = " AND ".join(blocks) or str(context["row"].get("query_text") or context["row"].get("compiled_query") or "")
     additions = []
     if context["date_from"] or context["date_to"]:
@@ -1815,6 +1814,57 @@ def _terms(canonical: dict[str, Any], key: str, *, limit: int) -> list[str]:
     if not isinstance(values, list):
         return []
     return [str(value) for value in values if str(value).strip()][:limit]
+
+
+def _provider_terms(canonical: dict[str, Any], key: str, *, limit: int) -> list[str]:
+    values = canonical.get(key)
+    if not isinstance(values, list):
+        return []
+    cleaned = [_plain_term(str(value)) for value in values if _plain_term(str(value))]
+    if not cleaned:
+        return []
+    ranked = sorted(
+        enumerate(cleaned),
+        key=lambda item: (_term_priority(item[1], key), item[0]),
+    )
+    selected: list[str] = []
+    seen: set[str] = set()
+    for _, term in ranked:
+        key_value = term.casefold()
+        if key_value in seen:
+            continue
+        seen.add(key_value)
+        selected.append(term)
+        if len(selected) >= limit:
+            break
+    return selected
+
+
+def _term_priority(term: str, block: str) -> int:
+    lowered = term.casefold()
+    if block == "emerging_contaminant_terms":
+        family_markers = [
+            "pfas",
+            "per- and polyfluoroalkyl",
+            "perfluoroalkyl",
+            "polyfluoroalkyl",
+            "fluorinated surfactant",
+            "pharmaceutical",
+            "antibiotic",
+            "hormone",
+            "pesticide",
+            "microplastic",
+            "nanoplastic",
+        ]
+        if any(marker in lowered for marker in family_markers):
+            return 0
+        if "emerging contaminant" in lowered or "contaminant of emerging concern" in lowered:
+            return 1
+        return 2
+    if block == "monitoring_and_concentration_terms":
+        if lowered in {"occurrence", "concentration", "monitoring", "detected", "measured"}:
+            return 0
+    return 1
 
 
 def _plain_term(term: str) -> str:
