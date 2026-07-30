@@ -1134,3 +1134,173 @@ def test_crossref_uses_ncbi_email_as_mailto_fallback(
     assert request.sanitized_params["mailto"] == "configured"
     assert "configured@example.invalid" not in request.sanitized_url
     assert runner._auth_status("crossref") == {"CROSSREF_MAILTO": "configured"}
+
+
+def enrichment_context(provider: str, identifiers: list[str]) -> dict[str, Any]:
+    return {
+        "canonical_query": {
+            **canonical(),
+            "lookup_mode": "metadata_enrichment_by_identifier",
+            "metadata_enrichment": {
+                "lookup_mode": "metadata_enrichment_by_identifier",
+                "records": [
+                    {
+                        "doi": identifier if identifier.startswith("10.") else "",
+                        "pmid": identifier if identifier.isdigit() else "",
+                        "provider_record_id": identifier,
+                    }
+                    for identifier in identifiers
+                ],
+            },
+        },
+        "row": {
+            "provider": provider,
+            "lookup_mode": "metadata_enrichment_by_identifier",
+            "identifiers": identifiers,
+            "metadata_enrichment": {
+                "lookup_mode": "metadata_enrichment_by_identifier",
+                "identifiers": identifiers,
+            },
+        },
+        "lookup_mode": "metadata_enrichment_by_identifier",
+        "date_from": "2006-01-01",
+        "date_to": "2026-07-10",
+        "document_types": ["journal article", "research article"],
+        "page_size": 1,
+    }
+
+
+def test_crossref_metadata_enrichment_uses_exact_work_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeHTTP(
+        [
+            runner.HttpResponse(
+                200,
+                {"content-type": "application/json"},
+                "",
+                {
+                    "message": {
+                        "DOI": "10.1016/j.envpol.2020.113958",
+                        "title": ["Field monitoring of emerging contaminants in rivers"],
+                        "abstract": "<jats:p>Abstract from Crossref.</jats:p>",
+                        "type": "journal-article",
+                        "language": "en",
+                    }
+                },
+            )
+        ]
+    )
+    monkeypatch.setattr(runner, "_http_json", fake.json)
+
+    provider = runner.CrossrefProvider()
+    request = provider.compile_request(
+        enrichment_context("crossref", ["10.1016/j.envpol.2020.113958"]),
+        1,
+    )
+    result = provider.execute(request, 1)
+
+    assert request.params["_lookup_mode"] == "metadata_enrichment_by_identifier"
+    assert "/works/10.1016%2Fj.envpol.2020.113958" in fake.urls[0]
+    assert "query.bibliographic" not in urllib.parse.urlparse(fake.urls[0]).query
+    assert result.status == "success"
+    assert result.records[0]["DOI"] == "10.1016/j.envpol.2020.113958"
+
+
+def test_crossref_metadata_enrichment_rejects_wrong_doi(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeHTTP(
+        [
+            runner.HttpResponse(
+                200,
+                {"content-type": "application/json"},
+                "",
+                {
+                    "message": {
+                        "DOI": "10.1016/j.jelechem.2020.113958",
+                        "title": ["Wrong near-match"],
+                        "type": "journal-article",
+                    }
+                },
+            )
+        ]
+    )
+    monkeypatch.setattr(runner, "_http_json", fake.json)
+
+    provider = runner.CrossrefProvider()
+    result = provider.execute(
+        provider.compile_request(
+            enrichment_context("crossref", ["10.1016/j.envpol.2020.113958"]),
+            1,
+        ),
+        1,
+    )
+
+    assert result.status == "no-results"
+    assert result.diagnostics["identifier_mismatches"][0]["returned_doi"] == "10.1016/j.jelechem.2020.113958"
+
+
+def test_openalex_metadata_enrichment_uses_exact_doi_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeHTTP(
+        [
+            runner.HttpResponse(
+                200,
+                {"content-type": "application/json"},
+                "",
+                {
+                    "id": "https://openalex.org/W123",
+                    "doi": "https://doi.org/10.1000/field",
+                    "title": "Field occurrence in surface water",
+                    "abstract_inverted_index": {"Abstract": [0], "text": [1]},
+                    "type": "article",
+                    "language": "en",
+                },
+            )
+        ]
+    )
+    monkeypatch.setattr(runner, "_http_json", fake.json)
+
+    provider = runner.OpenAlexProvider()
+    request = provider.compile_request(enrichment_context("openalex", ["10.1000/field"]), 1)
+    result = provider.execute(request, 1)
+
+    assert "/works/doi%3A10.1000%2Ffield" in fake.urls[0]
+    assert result.status == "success"
+    assert provider.normalize_record(result.records[0])["document_type"] == "article"
+    assert provider.normalize_record(result.records[0])["language"] == "en"
+
+
+def test_pubmed_metadata_enrichment_uses_direct_efetch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NCBI_EMAIL", "configured@example.invalid")
+    monkeypatch.setenv("NCBI_TOOL", "ECMonitor")
+    xml = """
+    <PubmedArticleSet><PubmedArticle><MedlineCitation>
+      <PMID>12345678</PMID>
+      <Article>
+        <ArticleTitle>Emerging contaminants in rivers</ArticleTitle>
+        <Abstract><AbstractText>PubMed abstract.</AbstractText></Abstract>
+        <Language>eng</Language>
+        <Journal><Title>Water Journal</Title><JournalIssue><PubDate><Year>2024</Year></PubDate></JournalIssue></Journal>
+        <PublicationTypeList><PublicationType>Journal Article</PublicationType></PublicationTypeList>
+      </Article>
+    </MedlineCitation><PubmedData><ArticleIdList><ArticleId IdType="doi">10.1000/pub</ArticleId></ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>
+    """
+    fake = FakeHTTP([runner.HttpResponse(200, {"content-type": "application/xml"}, xml)])
+    monkeypatch.setattr(runner, "_http_text", fake.text)
+
+    provider = runner.PubMedProvider()
+    request = provider.compile_request(enrichment_context("pubmed", ["12345678"]), 1)
+    result = provider.execute(request, 1)
+
+    assert "efetch.fcgi" in fake.urls[0]
+    assert "esearch.fcgi" not in fake.urls[0]
+    assert "id=12345678" in fake.urls[0]
+    assert result.status == "success"
+    assert result.records[0]["provider_record_id"] == "12345678"
+    assert result.records[0]["document_type"] == "Journal Article"
+    assert result.records[0]["language"] == "eng"

@@ -170,7 +170,7 @@ def provider_health_check(providers: list[str] | None = None) -> dict[str, Any]:
         try:
             request = implementation.compile_request(dict(context, provider=provider), 1)
             result = implementation.execute(request, 1)
-        except Exception as exc:
+        except (OSError, ValueError, RuntimeError, urllib.error.URLError) as exc:
             status.update(
                 {
                     "connectivity": "failed",
@@ -221,12 +221,14 @@ def run_skill(request: dict[str, Any], output_path: Path) -> dict[str, Any]:
     max_candidates = int(request.get("max_candidates") or request.get("max_results_per_query") or 1)
     page_size = int(request.get("page_size") or max_candidates)
     limit = min(max_candidates, page_size * int(request.get("max_scan_depth_per_provider") or 1))
+    lookup_mode = _request_lookup_mode(request, queries)
     context_base = {
         "canonical_query": dict(request.get("canonical_query") or {}),
         "date_from": str(request.get("date_from") or ""),
         "date_to": str(request.get("date_to") or ""),
         "document_types": [str(value) for value in request.get("document_types", [])],
         "page_size": page_size,
+        "lookup_mode": lookup_mode,
     }
 
     provider_page_refs: dict[str, list[str]] = {}
@@ -323,6 +325,8 @@ class CrossrefProvider:
     name = "crossref"
 
     def compile_request(self, context: dict[str, Any], limit: int) -> ProviderRequest:
+        if _is_metadata_enrichment_context(context):
+            return _compile_crossref_identifier_request(context, limit)
         query = _crossref_query(context)
         page_size = int(context.get("page_size") or limit or 1)
         negative_terms = _negative_terms(context["canonical_query"])
@@ -339,7 +343,7 @@ class CrossrefProvider:
                     "type:journal-article" if _wants_articles(context["document_types"]) else "",
                 ]
             ),
-            "select": ",".join(
+            "select": ",".join(  # noqa: FLY002
                 [
                     "DOI",
                     "title",
@@ -374,6 +378,8 @@ class CrossrefProvider:
         )
 
     def execute(self, request: ProviderRequest, limit: int) -> ProviderResult:
+        if request.params.get("_lookup_mode") == "metadata_enrichment_by_identifier":
+            return _execute_crossref_identifier_lookup(request, limit)
         page_size = int(request.params.get("_page_size") or limit or 1)
         negative_terms = [
             str(term) for term in request.params.get("_client_side_negative_terms", [])
@@ -463,6 +469,8 @@ class OpenAlexProvider:
     name = "openalex"
 
     def compile_request(self, context: dict[str, Any], limit: int) -> ProviderRequest:
+        if _is_metadata_enrichment_context(context):
+            return _compile_openalex_identifier_request(context, limit)
         chunks = _openalex_chunks(context["canonical_query"], context["row"])
         page_size = int(context.get("page_size") or limit or 1)
         negative_terms = _negative_terms(context["canonical_query"])
@@ -479,7 +487,7 @@ class OpenAlexProvider:
                 "search": chunk,
                 "per-page": min(max(page_size * 5, page_size), 50),
                 "filter": ",".join(filter_parts),
-                "select": ",".join(
+                "select": ",".join(  # noqa: FLY002
                     [
                         "id",
                         "doi",
@@ -523,6 +531,8 @@ class OpenAlexProvider:
         )
 
     def execute(self, request: ProviderRequest, limit: int) -> ProviderResult:
+        if request.params.get("_lookup_mode") == "metadata_enrichment_by_identifier":
+            return _execute_openalex_identifier_lookup(request, limit)
         records: list[dict[str, Any]] = []
         pages: list[list[dict[str, Any]]] = []
         seen: set[str] = set()
@@ -628,13 +638,15 @@ class SemanticScholarProvider:
     name = "semantic_scholar"
 
     def compile_request(self, context: dict[str, Any], limit: int) -> ProviderRequest:
+        if _is_metadata_enrichment_context(context):
+            return _compile_semantic_identifier_request(context, limit)
         query = _semantic_query(context["canonical_query"], context["row"])
         negative_terms = _negative_terms(context["canonical_query"])
         params = {
             "query": query,
             "limit": min(limit, 100),
             "_client_side_negative_terms": negative_terms,
-            "fields": ",".join(
+            "fields": ",".join(  # noqa: FLY002
                 [
                     "paperId",
                     "title",
@@ -678,6 +690,8 @@ class SemanticScholarProvider:
         )
 
     def execute(self, request: ProviderRequest, limit: int) -> ProviderResult:
+        if request.params.get("_lookup_mode") == "metadata_enrichment_by_identifier":
+            return _execute_semantic_identifier_lookup(request, limit)
         attempts = 0
         response = HttpResponse(None, {}, "", error="not attempted")
         while attempts < 3:
@@ -772,6 +786,8 @@ class PubMedProvider:
     name = "pubmed"
 
     def compile_request(self, context: dict[str, Any], limit: int) -> ProviderRequest:
+        if _is_metadata_enrichment_context(context):
+            return _compile_pubmed_identifier_request(context, limit)
         query = _pubmed_query(context)
         email = os.environ.get("NCBI_EMAIL", "").strip()
         tool = os.environ.get("NCBI_TOOL", "ECMonitor").strip() or "ECMonitor"
@@ -798,6 +814,8 @@ class PubMedProvider:
         )
 
     def execute(self, request: ProviderRequest, limit: int) -> ProviderResult:
+        if request.params.get("_lookup_mode") == "metadata_enrichment_by_identifier":
+            return _execute_pubmed_identifier_lookup(request, limit)
         if not os.environ.get("NCBI_EMAIL", "").strip():
             return ProviderResult(
                 self.name,
@@ -1707,7 +1725,7 @@ def _http_text(url: str, headers: dict[str, str]) -> HttpResponse:
         except urllib.error.HTTPError as exc:
             text = exc.read().decode("utf-8", errors="replace") if hasattr(exc, "read") else ""
             return HttpResponse(int(exc.code), dict(exc.headers.items()), text, error=str(exc), url=url)
-        except Exception as exc:  # pragma: no cover - network dependent
+        except (OSError, TimeoutError, urllib.error.URLError) as exc:  # pragma: no cover - network dependent
             last_error = str(exc)
             if attempt < 2 and _is_retryable_transport_error(last_error):
                 time.sleep(0.5 * (attempt + 1))
@@ -1809,6 +1827,486 @@ def _load_queries_ref(path: Path) -> list[dict[str, Any]]:
     return []
 
 
+def _request_lookup_mode(request: dict[str, Any], queries: list[dict[str, Any]]) -> str:
+    mode = str(request.get("lookup_mode") or "").strip()
+    if mode:
+        return mode
+    canonical = request.get("canonical_query")
+    if isinstance(canonical, dict):
+        mode = str(canonical.get("lookup_mode") or "").strip()
+        if mode:
+            return mode
+        metadata = canonical.get("metadata_enrichment")
+        if isinstance(metadata, dict):
+            mode = str(metadata.get("lookup_mode") or "").strip()
+            if mode:
+                return mode
+    for row in queries:
+        mode = str(row.get("lookup_mode") or "").strip()
+        if mode:
+            return mode
+        metadata = row.get("metadata_enrichment")
+        if isinstance(metadata, dict):
+            mode = str(metadata.get("lookup_mode") or "").strip()
+            if mode:
+                return mode
+    return ""
+
+
+def _is_metadata_enrichment_context(context: dict[str, Any]) -> bool:
+    return str(context.get("lookup_mode") or "").strip() == "metadata_enrichment_by_identifier"
+
+
+def _identifier_payload(context: dict[str, Any]) -> dict[str, Any]:
+    row = context.get("row") or {}
+    metadata = row.get("metadata_enrichment")
+    payload: dict[str, Any] = dict(metadata) if isinstance(metadata, dict) else {}
+    if row.get("identifiers") and not payload.get("identifiers"):
+        payload["identifiers"] = row.get("identifiers")
+    if not payload.get("identifiers"):
+        text = str(row.get("query_text") or row.get("compiled_query") or "")
+        payload["identifiers"] = [item.strip() for item in text.split(" OR ") if item.strip()]
+    return payload
+
+
+def _identifier_values(context: dict[str, Any], provider: str) -> list[str]:
+    payload = _identifier_payload(context)
+    values: list[str] = []
+    raw = payload.get("identifiers")
+    if isinstance(raw, list):
+        values.extend(str(value) for value in raw if str(value).strip())
+    by_provider = payload.get("identifiers_by_provider")
+    if isinstance(by_provider, dict) and isinstance(by_provider.get(provider), list):
+        values.extend(str(value) for value in by_provider[provider] if str(value).strip())
+    requested_records = payload.get("records")
+    if isinstance(requested_records, list):
+        for record in requested_records:
+            if isinstance(record, dict):
+                values.extend(_record_identifiers_for_provider(record, provider))
+    canonical = context.get("canonical_query")
+    if isinstance(canonical, dict):
+        metadata = canonical.get("metadata_enrichment")
+        if isinstance(metadata, dict) and isinstance(metadata.get("records"), list):
+            for record in metadata["records"]:
+                if isinstance(record, dict):
+                    values.extend(_record_identifiers_for_provider(record, provider))
+    return _dedupe_identifiers(values)
+
+
+def _record_identifiers_for_provider(record: dict[str, Any], provider: str) -> list[str]:
+    if provider in {"crossref", "openalex", "semantic_scholar"}:
+        doi = _normalize_doi(record.get("doi"))
+        return [doi] if doi else []
+    if provider == "pubmed":
+        for key in ["pmid", "provider_record_id", "source_record_id"]:
+            value = str(record.get(key) or "").strip()
+            if re.fullmatch(r"\d{6,9}", value):
+                return [value]
+    return []
+
+
+def _dedupe_identifiers(values: list[str]) -> list[str]:
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        item = str(value or "").strip()
+        if not item:
+            continue
+        if item.lower().startswith("doi:"):
+            item = item[4:].strip()
+        normalized = _normalize_doi(item) if _looks_like_doi(item) else item
+        key = normalized.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(normalized)
+    return cleaned
+
+
+def _looks_like_doi(value: Any) -> bool:
+    text = _normalize_doi(value)
+    return bool(re.match(r"^10\.\d{4,9}/\S+$", text, flags=re.IGNORECASE))
+
+
+def _identifier_provider_request(
+    *,
+    provider: str,
+    identifiers: list[str],
+    base_url: str,
+    params: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+    sanitized_headers: dict[str, str] | None = None,
+    chunks: list[dict[str, Any]] | None = None,
+) -> ProviderRequest:
+    payload = {
+        "_lookup_mode": "metadata_enrichment_by_identifier",
+        "_identifiers": identifiers,
+        **(params or {}),
+    }
+    sanitized = _sanitize_params(payload)
+    sanitized.pop("_identifiers", None)
+    sanitized.pop("_lookup_mode", None)
+    query = " OR ".join(identifiers)
+    return ProviderRequest(
+        provider=provider,
+        url=_url(base_url, {key: value for key, value in payload.items() if not key.startswith("_")}),
+        sanitized_url=_url(base_url, sanitized),
+        query=query,
+        params=payload,
+        sanitized_params={**sanitized, "lookup_mode": "metadata_enrichment_by_identifier"},
+        headers=headers or {},
+        sanitized_headers=sanitized_headers or {},
+        chunks=chunks or [],
+    )
+
+
+def _compile_crossref_identifier_request(context: dict[str, Any], limit: int) -> ProviderRequest:
+    identifiers = [
+        value for value in _identifier_values(context, "crossref") if _looks_like_doi(value)
+    ][:limit]
+    params: dict[str, Any] = {"rows": min(limit, 50)}
+    mailto = _crossref_mailto()
+    if mailto:
+        params["mailto"] = mailto
+    chunks = []
+    for doi in identifiers:
+        url = "https://api.crossref.org/works/" + urllib.parse.quote(_normalize_doi(doi), safe="")
+        if mailto:
+            url = _url(url, {"mailto": mailto})
+        chunks.append(
+            {
+                "identifier": _normalize_doi(doi),
+                "url": _url(
+                    "https://api.crossref.org/works/" + urllib.parse.quote(_normalize_doi(doi), safe=""),
+                    {"mailto": "configured"} if mailto else {},
+                ),
+            }
+        )
+    return _identifier_provider_request(
+        provider="crossref",
+        identifiers=identifiers,
+        base_url="https://api.crossref.org/works",
+        params=params,
+        chunks=chunks,
+    )
+
+
+def _execute_crossref_identifier_lookup(
+    request: ProviderRequest, limit: int
+) -> ProviderResult:
+    records: list[dict[str, Any]] = []
+    pages: list[list[dict[str, Any]]] = []
+    diagnostics: dict[str, Any] = {"lookup_mode": "metadata_enrichment_by_identifier", "pages_attempted": 0}
+    for doi in [value for value in request.params.get("_identifiers", []) if _looks_like_doi(value)][:limit]:
+        params = {}
+        if request.params.get("mailto"):
+            params["mailto"] = request.params["mailto"]
+        url = "https://api.crossref.org/works/" + urllib.parse.quote(_normalize_doi(doi), safe="")
+        if params:
+            url = _url(url, params)
+        response = _http_json(url, JSON_HEADERS)
+        diagnostics["pages_attempted"] = int(diagnostics["pages_attempted"]) + 1
+        if response.status != 200 or not isinstance(response.payload, dict):
+            status, error, error_diagnostics = _generic_error("crossref", response)
+            diagnostics.setdefault("errors", []).append(error_diagnostics | {"doi": _normalize_doi(doi)})
+            if status == "rate-limited" and not records:
+                return ProviderResult("crossref", [], status, error, diagnostics)
+            continue
+        item = response.payload.get("message")
+        if not isinstance(item, dict):
+            diagnostics.setdefault("errors", []).append({"doi": _normalize_doi(doi), "classification": "invalid_response_shape"})
+            continue
+        returned_doi = _normalize_doi(item.get("DOI"))
+        if returned_doi != _normalize_doi(doi):
+            diagnostics.setdefault("identifier_mismatches", []).append({"requested_doi": _normalize_doi(doi), "returned_doi": returned_doi})
+            continue
+        if _first_text(item.get("title")):
+            records.append(item)
+            pages.append([item])
+    return ProviderResult(
+        "crossref",
+        records,
+        "success" if records else "no-results",
+        diagnostics=diagnostics,
+        page_records=pages,
+        next_cursor=str(len(records)) if records else "",
+    )
+
+
+def _compile_openalex_identifier_request(context: dict[str, Any], limit: int) -> ProviderRequest:
+    identifiers = _identifier_values(context, "openalex")[:limit]
+    params: dict[str, Any] = {
+        "select": ",".join(  # noqa: FLY002
+            [
+                "id",
+                "doi",
+                "title",
+                "display_name",
+                "abstract_inverted_index",
+                "publication_year",
+                "publication_date",
+                "primary_location",
+                "authorships",
+                "keywords",
+                "open_access",
+                "type",
+                "language",
+            ]
+        )
+    }
+    api_key = os.environ.get("OPENALEX_API_KEY", "").strip()
+    if api_key:
+        params["api_key"] = api_key
+    chunks = [
+        {
+            "identifier": str(identifier),
+            "url": _url(
+                "https://api.openalex.org/works/"
+                + urllib.parse.quote(_openalex_lookup_id(identifier), safe=""),
+                _sanitize_params(params),
+            ),
+        }
+        for identifier in identifiers
+        if _openalex_lookup_id(identifier)
+    ]
+    return _identifier_provider_request(
+        provider="openalex",
+        identifiers=identifiers,
+        base_url="https://api.openalex.org/works",
+        params=params,
+        chunks=chunks,
+    )
+
+
+def _execute_openalex_identifier_lookup(
+    request: ProviderRequest, limit: int
+) -> ProviderResult:
+    records: list[dict[str, Any]] = []
+    pages: list[list[dict[str, Any]]] = []
+    diagnostics: dict[str, Any] = {"lookup_mode": "metadata_enrichment_by_identifier", "pages_attempted": 0}
+    for identifier in request.params.get("_identifiers", [])[:limit]:
+        work_id = _openalex_lookup_id(identifier)
+        if not work_id:
+            continue
+        params = {key: value for key, value in request.params.items() if not key.startswith("_")}
+        url = _url(f"https://api.openalex.org/works/{urllib.parse.quote(work_id, safe='')}", params)
+        response = _http_json(url, JSON_HEADERS)
+        diagnostics["pages_attempted"] = int(diagnostics["pages_attempted"]) + 1
+        if response.status != 200 or not isinstance(response.payload, dict):
+            status, error, error_diagnostics = _generic_error("openalex", response)
+            diagnostics.setdefault("errors", []).append(error_diagnostics | {"identifier": str(identifier)})
+            if status == "rate-limited" and not records:
+                return ProviderResult("openalex", [], status, error, diagnostics)
+            continue
+        if not _openalex_identifier_matches(identifier, response.payload):
+            diagnostics.setdefault("identifier_mismatches", []).append(
+                {
+                    "requested_identifier": str(identifier),
+                    "returned_id": str(response.payload.get("id") or ""),
+                    "returned_doi": _normalize_doi(response.payload.get("doi")),
+                }
+            )
+            continue
+        records.append(response.payload)
+        pages.append([response.payload])
+    return ProviderResult(
+        "openalex",
+        records,
+        "success" if records else "no-results",
+        diagnostics=diagnostics,
+        page_records=pages,
+        next_cursor=str(len(records)) if records else "",
+    )
+
+
+def _compile_semantic_identifier_request(context: dict[str, Any], limit: int) -> ProviderRequest:
+    identifiers = [
+        value for value in _identifier_values(context, "semantic_scholar") if _looks_like_doi(value)
+    ][:limit]
+    headers = dict(JSON_HEADERS)
+    sanitized_headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+    if os.environ.get("SEMANTIC_SCHOLAR_API_KEY", "").strip():
+        headers["x-api-key"] = os.environ["SEMANTIC_SCHOLAR_API_KEY"]
+        sanitized_headers["x-api-key"] = "configured"
+    params = {
+        "fields": ",".join(  # noqa: FLY002
+            [
+                "paperId",
+                "title",
+                "abstract",
+                "year",
+                "journal",
+                "authors",
+                "externalIds",
+                "openAccessPdf",
+                "url",
+                "publicationTypes",
+                "publicationDate",
+                "venue",
+            ]
+        )
+    }
+    chunks = [
+        {
+            "identifier": _normalize_doi(doi),
+            "url": _url(
+                "https://api.semanticscholar.org/graph/v1/paper/DOI:"
+                + urllib.parse.quote(_normalize_doi(doi), safe=""),
+                _sanitize_params(params),
+            ),
+        }
+        for doi in identifiers
+    ]
+    return _identifier_provider_request(
+        provider="semantic_scholar",
+        identifiers=identifiers,
+        base_url="https://api.semanticscholar.org/graph/v1/paper",
+        params=params,
+        headers=headers,
+        sanitized_headers=sanitized_headers,
+        chunks=chunks,
+    )
+
+
+def _execute_semantic_identifier_lookup(
+    request: ProviderRequest, limit: int
+) -> ProviderResult:
+    records: list[dict[str, Any]] = []
+    pages: list[list[dict[str, Any]]] = []
+    diagnostics: dict[str, Any] = {"lookup_mode": "metadata_enrichment_by_identifier", "pages_attempted": 0}
+    for doi in [value for value in request.params.get("_identifiers", []) if _looks_like_doi(value)][:limit]:
+        params = {key: value for key, value in request.params.items() if not key.startswith("_")}
+        url = _url(
+            "https://api.semanticscholar.org/graph/v1/paper/DOI:" + urllib.parse.quote(_normalize_doi(doi), safe=""),
+            params,
+        )
+        response = _http_json(url, request.headers)
+        diagnostics["pages_attempted"] = int(diagnostics["pages_attempted"]) + 1
+        if response.status == 429:
+            diagnostics["retry_after"] = response.headers.get("retry-after") or response.headers.get("Retry-After")
+            return ProviderResult("semantic_scholar", records, "partial" if records else "rate-limited", "Semantic Scholar rate limited", diagnostics, page_records=pages)
+        if response.status != 200 or not isinstance(response.payload, dict):
+            _status, _error, error_diagnostics = _generic_error("semantic_scholar", response)
+            diagnostics.setdefault("errors", []).append(error_diagnostics | {"doi": _normalize_doi(doi)})
+            continue
+        returned_doi = _normalize_doi((response.payload.get("externalIds") or {}).get("DOI"))
+        if returned_doi != _normalize_doi(doi):
+            diagnostics.setdefault("identifier_mismatches", []).append({"requested_doi": _normalize_doi(doi), "returned_doi": returned_doi})
+            continue
+        records.append(response.payload)
+        pages.append([response.payload])
+    return ProviderResult(
+        "semantic_scholar",
+        records,
+        "success" if records else "no-results",
+        diagnostics=diagnostics,
+        page_records=pages,
+        next_cursor=str(len(records)) if records else "",
+    )
+
+
+def _compile_pubmed_identifier_request(context: dict[str, Any], limit: int) -> ProviderRequest:
+    identifiers = [
+        value for value in _identifier_values(context, "pubmed") if re.fullmatch(r"\d{6,9}", value)
+    ][:limit]
+    email = os.environ.get("NCBI_EMAIL", "").strip()
+    tool = os.environ.get("NCBI_TOOL", "ECMonitor").strip() or "ECMonitor"
+    params: dict[str, Any] = {
+        "db": "pubmed",
+        "id": ",".join(identifiers),
+        "retmode": "xml",
+        "email": email,
+        "tool": tool,
+    }
+    api_key = os.environ.get("NCBI_API_KEY", "").strip()
+    if api_key:
+        params["api_key"] = api_key
+    chunks = [
+        {
+            "identifier": ",".join(identifiers),
+            "url": _url(
+                "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+                _sanitize_params(params),
+            ),
+        }
+    ] if identifiers else []
+    return _identifier_provider_request(
+        provider="pubmed",
+        identifiers=identifiers,
+        base_url="https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+        params=params,
+        chunks=chunks,
+    )
+
+
+def _execute_pubmed_identifier_lookup(request: ProviderRequest, limit: int) -> ProviderResult:
+    if not os.environ.get("NCBI_EMAIL", "").strip():
+        return ProviderResult(
+            "pubmed",
+            [],
+            "configuration_required",
+            "NCBI_EMAIL missing",
+            {"classification": "configuration_required", "lookup_mode": "metadata_enrichment_by_identifier"},
+        )
+    identifiers = [
+        value for value in request.params.get("_identifiers", []) if re.fullmatch(r"\d{6,9}", str(value))
+    ][:limit]
+    if not identifiers:
+        return ProviderResult("pubmed", [], "no-results", diagnostics={"lookup_mode": "metadata_enrichment_by_identifier"})
+    params = {key: value for key, value in request.params.items() if not key.startswith("_")}
+    params["id"] = ",".join(identifiers)
+    response = _http_text(_url("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi", params), XML_HEADERS)
+    error = _pubmed_response_error(response, "efetch", expect_json=False)
+    if error is not None:
+        return error
+    try:
+        root = ET.fromstring(response.text.strip())
+    except ET.ParseError:
+        return ProviderResult(
+            "pubmed",
+            [],
+            "failed",
+            "PubMed EFetch returned malformed XML",
+            _pubmed_diagnostics(response, "malformed_xml", "efetch") | {"lookup_mode": "metadata_enrichment_by_identifier"},
+        )
+    requested = set(identifiers)
+    records = [
+        record
+        for record in _pubmed_records(root, "")
+        if str(record.get("provider_record_id") or "") in requested
+    ][:limit]
+    return ProviderResult(
+        "pubmed",
+        records,
+        "success" if records else "no-results",
+        diagnostics={"lookup_mode": "metadata_enrichment_by_identifier", "pages_attempted": 1},
+        page_records=_chunk_records(records, 1),
+        next_cursor=str(len(records)) if records else "",
+    )
+
+
+def _openalex_lookup_id(identifier: Any) -> str:
+    text = str(identifier or "").strip()
+    if not text:
+        return ""
+    if text.lower().startswith("https://openalex.org/"):
+        return text.rsplit("/", 1)[-1]
+    if re.fullmatch(r"W\d+", text, flags=re.IGNORECASE):
+        return text.upper()
+    if _looks_like_doi(text):
+        return "doi:" + _normalize_doi(text)
+    return ""
+
+
+def _openalex_identifier_matches(identifier: Any, payload: dict[str, Any]) -> bool:
+    text = str(identifier or "").strip()
+    if _looks_like_doi(text):
+        return _normalize_doi(payload.get("doi")) == _normalize_doi(text)
+    lookup = _openalex_lookup_id(text).casefold()
+    returned = str(payload.get("id") or "").rstrip("/").rsplit("/", 1)[-1].casefold()
+    return bool(lookup and returned and lookup.casefold() == returned)
+
+
 def _terms(canonical: dict[str, Any], key: str, *, limit: int) -> list[str]:
     values = canonical.get(key)
     if not isinstance(values, list):
@@ -1861,9 +2359,14 @@ def _term_priority(term: str, block: str) -> int:
         if "emerging contaminant" in lowered or "contaminant of emerging concern" in lowered:
             return 1
         return 2
-    if block == "monitoring_and_concentration_terms":
-        if lowered in {"occurrence", "concentration", "monitoring", "detected", "measured"}:
-            return 0
+    if block == "monitoring_and_concentration_terms" and lowered in {
+        "occurrence",
+        "concentration",
+        "monitoring",
+        "detected",
+        "measured",
+    }:
+        return 0
     return 1
 
 
