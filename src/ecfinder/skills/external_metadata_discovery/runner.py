@@ -1753,6 +1753,25 @@ def _generic_error(provider: str, response: HttpResponse) -> tuple[str, str, dic
     return status, error, diagnostics
 
 
+def _identifier_lookup_status(
+    records: list[dict[str, Any]], diagnostics: dict[str, Any]
+) -> tuple[str, str]:
+    """Keep transient identifier lookup failures distinct from true no-results."""
+
+    errors = diagnostics.get("errors") or []
+    retryable_errors = [
+        error
+        for error in errors
+        if int(error.get("http_status") or 0) not in {404, 410}
+    ]
+    if retryable_errors:
+        status = "partial" if records else "failed"
+        return status, "Identifier metadata lookup was incomplete"
+    if records:
+        return "success", ""
+    return "no-results", ""
+
+
 def _pubmed_diagnostics(response: HttpResponse, classification: str, stage: str) -> dict[str, Any]:
     diagnostics: dict[str, Any] = {
         "stage": stage,
@@ -1902,6 +1921,9 @@ def _record_identifiers_for_provider(record: dict[str, Any], provider: str) -> l
             value = str(record.get(key) or "").strip()
             if re.fullmatch(r"\d{6,9}", value):
                 return [value]
+        doi = _normalize_doi(record.get("doi"))
+        if doi:
+            return [doi]
     return []
 
 
@@ -2023,10 +2045,12 @@ def _execute_crossref_identifier_lookup(
         if _first_text(item.get("title")):
             records.append(item)
             pages.append([item])
+    status, error = _identifier_lookup_status(records, diagnostics)
     return ProviderResult(
         "crossref",
         records,
-        "success" if records else "no-results",
+        status,
+        error,
         diagnostics=diagnostics,
         page_records=pages,
         next_cursor=str(len(records)) if records else "",
@@ -2109,10 +2133,12 @@ def _execute_openalex_identifier_lookup(
             continue
         records.append(response.payload)
         pages.append([response.payload])
+    status, error = _identifier_lookup_status(records, diagnostics)
     return ProviderResult(
         "openalex",
         records,
-        "success" if records else "no-results",
+        status,
+        error,
         diagnostics=diagnostics,
         page_records=pages,
         next_cursor=str(len(records)) if records else "",
@@ -2195,10 +2221,12 @@ def _execute_semantic_identifier_lookup(
             continue
         records.append(response.payload)
         pages.append([response.payload])
+    status, error = _identifier_lookup_status(records, diagnostics)
     return ProviderResult(
         "semantic_scholar",
         records,
-        "success" if records else "no-results",
+        status,
+        error,
         diagnostics=diagnostics,
         page_records=pages,
         next_cursor=str(len(records)) if records else "",
@@ -2207,13 +2235,16 @@ def _execute_semantic_identifier_lookup(
 
 def _compile_pubmed_identifier_request(context: dict[str, Any], limit: int) -> ProviderRequest:
     identifiers = [
-        value for value in _identifier_values(context, "pubmed") if re.fullmatch(r"\d{6,9}", value)
+        value
+        for value in _identifier_values(context, "pubmed")
+        if re.fullmatch(r"\d{6,9}", value) or _looks_like_doi(value)
     ][:limit]
+    pmids = [value for value in identifiers if re.fullmatch(r"\d{6,9}", value)]
     email = os.environ.get("NCBI_EMAIL", "").strip()
     tool = os.environ.get("NCBI_TOOL", "ECMonitor").strip() or "ECMonitor"
     params: dict[str, Any] = {
         "db": "pubmed",
-        "id": ",".join(identifiers),
+        "id": ",".join(pmids),
         "retmode": "xml",
         "email": email,
         "tool": tool,
@@ -2221,15 +2252,39 @@ def _compile_pubmed_identifier_request(context: dict[str, Any], limit: int) -> P
     api_key = os.environ.get("NCBI_API_KEY", "").strip()
     if api_key:
         params["api_key"] = api_key
-    chunks = [
-        {
-            "identifier": ",".join(identifiers),
-            "url": _url(
-                "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
-                _sanitize_params(params),
-            ),
+    chunks = []
+    if pmids:
+        chunks.append(
+            {
+                "identifier": ",".join(pmids),
+                "stage": "efetch",
+                "url": _url(
+                    "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+                    _sanitize_params(params),
+                ),
+            }
+        )
+    for doi in [value for value in identifiers if _looks_like_doi(value)]:
+        search_params = {
+            "db": "pubmed",
+            "term": f'"{_normalize_doi(doi)}"[AID]',
+            "retmax": "5",
+            "retmode": "json",
+            "email": email,
+            "tool": tool,
         }
-    ] if identifiers else []
+        if api_key:
+            search_params["api_key"] = api_key
+        chunks.append(
+            {
+                "identifier": _normalize_doi(doi),
+                "stage": "esearch",
+                "url": _url(
+                    "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
+                    _sanitize_params(search_params),
+                ),
+            }
+        )
     return _identifier_provider_request(
         provider="pubmed",
         identifiers=identifiers,
@@ -2249,13 +2304,90 @@ def _execute_pubmed_identifier_lookup(request: ProviderRequest, limit: int) -> P
             {"classification": "configuration_required", "lookup_mode": "metadata_enrichment_by_identifier"},
         )
     identifiers = [
-        value for value in request.params.get("_identifiers", []) if re.fullmatch(r"\d{6,9}", str(value))
+        str(value)
+        for value in request.params.get("_identifiers", [])
+        if re.fullmatch(r"\d{6,9}", str(value)) or _looks_like_doi(value)
     ][:limit]
     if not identifiers:
         return ProviderResult("pubmed", [], "no-results", diagnostics={"lookup_mode": "metadata_enrichment_by_identifier"})
+    requested_pmids = {
+        value for value in identifiers if re.fullmatch(r"\d{6,9}", value)
+    }
+    requested_dois = {
+        _normalize_doi(value) for value in identifiers if _looks_like_doi(value)
+    }
+    resolved_pmids = set(requested_pmids)
+    diagnostics: dict[str, Any] = {
+        "lookup_mode": "metadata_enrichment_by_identifier",
+        "pages_attempted": 0,
+        "doi_searches_attempted": 0,
+        "doi_searches_resolved": 0,
+    }
+    resolution_failed = False
+    base_params = {
+        key: value
+        for key, value in request.params.items()
+        if not key.startswith("_") and key != "id"
+    }
+    for doi in sorted(requested_dois):
+        search_params = {
+            **base_params,
+            "term": f'"{doi}"[AID]',
+            "retmax": "5",
+            "retmode": "json",
+        }
+        search_response = _http_text(
+            _url(
+                "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
+                search_params,
+            ),
+            JSON_HEADERS,
+        )
+        diagnostics["pages_attempted"] = int(diagnostics["pages_attempted"]) + 1
+        diagnostics["doi_searches_attempted"] = (
+            int(diagnostics["doi_searches_attempted"]) + 1
+        )
+        search_error = _pubmed_response_error(
+            search_response, "esearch", expect_json=True
+        )
+        if search_error is not None:
+            resolution_failed = True
+            diagnostics.setdefault("errors", []).append(
+                search_error.diagnostics | {"doi": doi}
+            )
+            continue
+        try:
+            payload = json.loads(search_response.text)
+        except json.JSONDecodeError:
+            resolution_failed = True
+            diagnostics.setdefault("errors", []).append(
+                {"classification": "malformed_json", "doi": doi}
+            )
+            continue
+        id_list = (payload.get("esearchresult") or {}).get("idlist") or []
+        matched_ids = {
+            str(value) for value in id_list if re.fullmatch(r"\d{6,9}", str(value))
+        }
+        if matched_ids:
+            diagnostics["doi_searches_resolved"] = (
+                int(diagnostics["doi_searches_resolved"]) + 1
+            )
+            resolved_pmids.update(matched_ids)
+    if not resolved_pmids:
+        return ProviderResult(
+            "pubmed",
+            [],
+            "failed" if resolution_failed else "no-results",
+            "PubMed DOI resolution failed" if resolution_failed else "",
+            diagnostics,
+        )
     params = {key: value for key, value in request.params.items() if not key.startswith("_")}
-    params["id"] = ",".join(identifiers)
+    params["id"] = ",".join(sorted(resolved_pmids))
+    params["retmode"] = "xml"
+    params.pop("term", None)
+    params.pop("retmax", None)
     response = _http_text(_url("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi", params), XML_HEADERS)
+    diagnostics["pages_attempted"] = int(diagnostics["pages_attempted"]) + 1
     error = _pubmed_response_error(response, "efetch", expect_json=False)
     if error is not None:
         return error
@@ -2269,17 +2401,21 @@ def _execute_pubmed_identifier_lookup(request: ProviderRequest, limit: int) -> P
             "PubMed EFetch returned malformed XML",
             _pubmed_diagnostics(response, "malformed_xml", "efetch") | {"lookup_mode": "metadata_enrichment_by_identifier"},
         )
-    requested = set(identifiers)
     records = [
         record
         for record in _pubmed_records(root, "")
-        if str(record.get("provider_record_id") or "") in requested
+        if str(record.get("provider_record_id") or "") in requested_pmids
+        or _normalize_doi(record.get("doi")) in requested_dois
     ][:limit]
     return ProviderResult(
         "pubmed",
         records,
-        "success" if records else "no-results",
-        diagnostics={"lookup_mode": "metadata_enrichment_by_identifier", "pages_attempted": 1},
+        (
+            "partial"
+            if records and resolution_failed
+            else ("success" if records else "no-results")
+        ),
+        diagnostics=diagnostics,
         page_records=_chunk_records(records, 1),
         next_cursor=str(len(records)) if records else "",
     )

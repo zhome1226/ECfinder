@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from ecfinder.skills.external_metadata_discovery import runner
 
 
@@ -1285,10 +1284,16 @@ def test_pubmed_metadata_enrichment_uses_direct_efetch(
         <ArticleTitle>Emerging contaminants in rivers</ArticleTitle>
         <Abstract><AbstractText>PubMed abstract.</AbstractText></Abstract>
         <Language>eng</Language>
-        <Journal><Title>Water Journal</Title><JournalIssue><PubDate><Year>2024</Year></PubDate></JournalIssue></Journal>
-        <PublicationTypeList><PublicationType>Journal Article</PublicationType></PublicationTypeList>
+        <Journal><Title>Water Journal</Title><JournalIssue>
+          <PubDate><Year>2024</Year></PubDate>
+        </JournalIssue></Journal>
+        <PublicationTypeList>
+          <PublicationType>Journal Article</PublicationType>
+        </PublicationTypeList>
       </Article>
-    </MedlineCitation><PubmedData><ArticleIdList><ArticleId IdType="doi">10.1000/pub</ArticleId></ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>
+    </MedlineCitation><PubmedData><ArticleIdList>
+      <ArticleId IdType="doi">10.1000/pub</ArticleId>
+    </ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>
     """
     fake = FakeHTTP([runner.HttpResponse(200, {"content-type": "application/xml"}, xml)])
     monkeypatch.setattr(runner, "_http_text", fake.text)
@@ -1304,3 +1309,145 @@ def test_pubmed_metadata_enrichment_uses_direct_efetch(
     assert result.records[0]["provider_record_id"] == "12345678"
     assert result.records[0]["document_type"] == "Journal Article"
     assert result.records[0]["language"] == "eng"
+
+
+def test_pubmed_metadata_enrichment_resolves_doi_then_fetches_abstract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NCBI_EMAIL", "configured@example.invalid")
+    monkeypatch.setenv("NCBI_TOOL", "ECMonitor")
+    esearch = json.dumps({"esearchresult": {"idlist": ["12345678"]}})
+    xml = """
+    <PubmedArticleSet><PubmedArticle><MedlineCitation>
+      <PMID>12345678</PMID>
+      <Article>
+        <ArticleTitle>Emerging contaminants in rivers</ArticleTitle>
+        <Abstract><AbstractText>PubMed DOI-resolved abstract.</AbstractText></Abstract>
+        <Language>eng</Language>
+        <Journal><Title>Water Journal</Title><JournalIssue><PubDate><Year>2024</Year></PubDate></JournalIssue></Journal>
+        <PublicationTypeList><PublicationType>Journal Article</PublicationType></PublicationTypeList>
+      </Article>
+    </MedlineCitation><PubmedData><ArticleIdList><ArticleId IdType="doi">10.1000/pub</ArticleId></ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>
+    """
+    fake = FakeHTTP(
+        [
+            runner.HttpResponse(200, {"content-type": "application/json"}, esearch),
+            runner.HttpResponse(200, {"content-type": "application/xml"}, xml),
+        ]
+    )
+    monkeypatch.setattr(runner, "_http_text", fake.text)
+
+    provider = runner.PubMedProvider()
+    request = provider.compile_request(
+        enrichment_context("pubmed", ["10.1000/pub"]), 1
+    )
+    result = provider.execute(request, 1)
+
+    assert request.params["_identifiers"] == ["10.1000/pub"]
+    assert request.chunks[0]["stage"] == "esearch"
+    assert "configured@example.invalid" not in request.chunks[0]["url"]
+    assert "email=configured" in request.chunks[0]["url"]
+    assert "esearch.fcgi" in fake.urls[0]
+    assert urllib.parse.parse_qs(urllib.parse.urlparse(fake.urls[0]).query)["term"] == [
+        '"10.1000/pub"[AID]'
+    ]
+    assert "efetch.fcgi" in fake.urls[1]
+    assert "id=12345678" in fake.urls[1]
+    assert result.status == "success"
+    assert result.records[0]["abstract"] == "PubMed DOI-resolved abstract."
+    assert result.diagnostics["doi_searches_resolved"] == 1
+
+
+def test_crossref_identifier_transient_error_is_not_no_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeHTTP(
+        [runner.HttpResponse(503, {"content-type": "text/plain"}, "upstream unavailable")]
+    )
+    monkeypatch.setattr(runner, "_http_json", fake.json)
+
+    provider = runner.CrossrefProvider()
+    result = provider.execute(
+        provider.compile_request(
+            enrichment_context("crossref", ["10.1000/transient"]), 1
+        ),
+        1,
+    )
+
+    assert result.status == "failed"
+    assert result.diagnostics["errors"][0]["http_status"] == 503
+
+
+def test_crossref_identifier_not_found_is_no_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeHTTP(
+        [runner.HttpResponse(404, {"content-type": "application/json"}, "not found")]
+    )
+    monkeypatch.setattr(runner, "_http_json", fake.json)
+
+    provider = runner.CrossrefProvider()
+    result = provider.execute(
+        provider.compile_request(
+            enrichment_context("crossref", ["10.1000/not-found"]), 1
+        ),
+        1,
+    )
+
+    assert result.status == "no-results"
+
+
+def test_openalex_identifier_mixed_failure_is_partial(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeHTTP(
+        [
+            runner.HttpResponse(
+                200,
+                {"content-type": "application/json"},
+                "",
+                {
+                    "id": "https://openalex.org/W123",
+                    "doi": "https://doi.org/10.1000/field",
+                    "title": "Field occurrence in surface water",
+                    "abstract_inverted_index": {"Abstract": [0]},
+                    "type": "article",
+                    "language": "en",
+                },
+            ),
+            runner.HttpResponse(503, {"content-type": "text/plain"}, "upstream unavailable"),
+        ]
+    )
+    monkeypatch.setattr(runner, "_http_json", fake.json)
+
+    provider = runner.OpenAlexProvider()
+    result = provider.execute(
+        provider.compile_request(
+            enrichment_context("openalex", ["10.1000/field", "10.1000/retry"]),
+            2,
+        ),
+        2,
+    )
+
+    assert result.status == "partial"
+    assert len(result.records) == 1
+    assert result.diagnostics["errors"][0]["http_status"] == 503
+
+
+def test_semantic_identifier_bad_request_is_not_no_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeHTTP(
+        [runner.HttpResponse(400, {"content-type": "application/json"}, "bad request")]
+    )
+    monkeypatch.setattr(runner, "_http_json", fake.json)
+
+    provider = runner.SemanticScholarProvider()
+    result = provider.execute(
+        provider.compile_request(
+            enrichment_context("semantic_scholar", ["10.1000/invalid"]), 1
+        ),
+        1,
+    )
+
+    assert result.status == "failed"
